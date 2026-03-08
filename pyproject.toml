@@ -1,0 +1,15 @@
+[project]
+name = "githubsss"
+version = "0.1.0"
+description = "GitHub Tracker MCP server (read-only)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastmcp",
+  "httpx",
+  "python-dotenv",
+]
+
+[tool.uv]
+package = false
+
