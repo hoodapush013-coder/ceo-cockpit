@@ -1,9 +1,19 @@
-cat > .gitignore <<'EOF'
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
-.env
-ledger.db
-*.db
-EOF
+*.egg-info/
 
+# Environment secrets — NEVER commit these
+.env
+
+# SQLite database — generated locally, not source code
+ledger.db
+
+# macOS junk
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
