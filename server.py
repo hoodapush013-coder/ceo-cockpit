@@ -20,6 +20,9 @@ import sqlite3
 import json
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
+# --- Postgres / SQLAlchemy imports ---
+from db import SessionLocal, init_db
+from models import TrackedRepo, Snapshot, LedgerState, LedgerEvent
 
 
 # Single MCP application instance – all tools in this file register on it.
@@ -134,6 +137,7 @@ LEDGER_DB_PATH = Path(__file__).with_name("ledger.db")
 
 
 def init_ledger_db() -> None:
+   
     """Create the SQLite schema if it does not already exist.
 
     Tables:
@@ -197,6 +201,7 @@ def init_ledger_db() -> None:
 # Ensure schema exists as soon as the module is imported. This makes tools safe
 # to call from environments that do not manage migrations explicitly.
 init_ledger_db()
+init_db()
 
 
 async def get_head_sha(
@@ -589,18 +594,29 @@ async def repos_add(org_id: str, repo: str, display_name: str | None = None) -> 
     """Add or re-enable a repository in the tracked_repos table for an org."""
     parse_repo(repo)
 
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        conn.execute(
-            "INSERT INTO tracked_repos(org_id, repo, display_name, is_tracked) VALUES(?, ?, ?, 1) "
-            "ON CONFLICT(org_id, repo) DO UPDATE SET "
-            "display_name=COALESCE(excluded.display_name, tracked_repos.display_name), "
-            "is_tracked=1",
-            (org_id, repo, display_name),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        # Check if this repo already exists for this org
+        existing = session.query(TrackedRepo).filter_by(
+            org_id=org_id,
+            repo=repo,
+        ).first()
+
+        if existing:
+            # Re-enable and update display name if provided
+            existing.is_tracked = True
+            if display_name is not None:
+                existing.display_name = display_name
+        else:
+            # Create a brand new tracked repo
+            new_repo = TrackedRepo(
+                org_id=org_id,
+                repo=repo,
+                display_name=display_name,
+                is_tracked=True,
+            )
+            session.add(new_repo)
+
+        session.commit()
 
     return {"ok": True, "org_id": org_id, "repo": repo, "display_name": display_name}
 
@@ -608,37 +624,40 @@ async def repos_add(org_id: str, repo: str, display_name: str | None = None) -> 
 @mcp.tool()
 async def repos_list(org_id: str) -> dict:
     """List all actively tracked repositories for an org."""
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        rows = conn.execute(
-            "SELECT repo, display_name, added_at FROM tracked_repos "
-            "WHERE org_id=? AND is_tracked=1 "
-            "ORDER BY added_at DESC",
-            (org_id,),
-        ).fetchall()
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        rows = session.query(TrackedRepo).filter_by(
+            org_id=org_id,
+            is_tracked=True,
+        ).order_by(TrackedRepo.added_at.desc()).all()
 
-    items = [{"repo": r, "display_name": d, "added_at": a} for (r, d, a) in rows]
+    items = [
+        {
+            "repo": r.repo,
+            "display_name": r.display_name,
+            "added_at": r.added_at.isoformat() if r.added_at else None,
+        }
+        for r in rows
+    ]
     return {"ok": True, "org_id": org_id, "repos": items}
 
 
 @mcp.tool()
 async def repos_remove(org_id: str, repo: str) -> dict:
-    """Soft-delete a repo from an org's tracked list (is_tracked=0)."""
+    """Soft-delete a repo from an org's tracked list (is_tracked=False)."""
     parse_repo(repo)
 
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        conn.execute(
-            "UPDATE tracked_repos SET is_tracked=0 WHERE org_id=? AND repo=?",
-            (org_id, repo),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        existing = session.query(TrackedRepo).filter_by(
+            org_id=org_id,
+            repo=repo,
+        ).first()
+
+        if existing:
+            existing.is_tracked = False
+            session.commit()
 
     return {"ok": True, "org_id": org_id, "repo": repo}
+    
 
 @mcp.tool()
 async def snapshot_collect(repo: str) -> dict:
