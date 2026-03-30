@@ -12,6 +12,7 @@ High level pieces:
 """
 
 import os
+from typing import Any
 from dotenv import load_dotenv
 import httpx
 from fastmcp import FastMCP
@@ -657,7 +658,7 @@ async def repos_remove(org_id: str, repo: str) -> dict:
             session.commit()
 
     return {"ok": True, "org_id": org_id, "repo": repo}
-    
+
 
 @mcp.tool()
 async def snapshot_collect(repo: str) -> dict:
@@ -701,7 +702,7 @@ async def snapshot_collect(repo: str) -> dict:
     commits_7d = len(commits7) if isinstance(commits7, list) else 0
 
     # --- active devs (unique authors in last 7d commits) ---
-    authors = set()
+    authors = set[Any]()
     if isinstance(commits7, list):
         for item in commits7:
             gh_author = item.get("author") or {}
@@ -757,12 +758,10 @@ async def snapshot_collect(repo: str) -> dict:
                 merged_prs_7d += 1
 
     # --- write snapshot ---
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        count = conn.execute(
-            "SELECT COUNT(*) FROM snapshots WHERE repo=?",
-            (repo,),
-        ).fetchone()[0]
+# --- write snapshot ---
+    with SessionLocal() as session:
+        # Count existing snapshots for heartbeat number
+        count = session.query(Snapshot).filter_by(repo=repo).count()
 
         metrics = {
             "heartbeat": count + 1,
@@ -773,20 +772,16 @@ async def snapshot_collect(repo: str) -> dict:
             "merged_prs_7d": merged_prs_7d,
         }
 
-        cur = conn.execute(
-            "INSERT INTO snapshots(repo, metrics_json) VALUES(?, ?)",
-            (repo, json.dumps(metrics)),
+        new_snap = Snapshot(
+            repo=repo,
+            metrics_json=json.dumps(metrics),
         )
-        snap_id = cur.lastrowid
+        session.add(new_snap)
+        session.commit()
 
-        ts = conn.execute(
-            "SELECT ts FROM snapshots WHERE id=?",
-            (snap_id,),
-        ).fetchone()[0]
-
-        conn.commit()
-    finally:
-        conn.close()
+        # After commit, Postgres has filled in id and ts automatically
+        session.refresh(new_snap)
+        ts = new_snap.ts.isoformat() if new_snap.ts else None
 
     return {"ok": True, "repo": repo, "ts": ts, "metrics": metrics}
 
@@ -796,27 +791,22 @@ async def metrics_series(repo: str, key: str, limit: int = 100) -> dict:
     """Return a time-ordered series for a single metric key for a repo."""
     parse_repo(repo)
 
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        rows = conn.execute(
-            "SELECT ts, metrics_json FROM snapshots "
-            "WHERE repo=? "
-            "ORDER BY id DESC "
-            "LIMIT ?",
-            (repo, limit),
-        ).fetchall()
-
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        rows = session.query(Snapshot).filter_by(
+            repo=repo,
+        ).order_by(Snapshot.id.desc()).limit(limit).all()
 
     # rows are newest-first; reverse to oldest-first for graphing
     rows.reverse()
 
     series = []
-    for ts, metrics_json in rows:
-        metrics = json.loads(metrics_json)
+    for snap in rows:
+        metrics = json.loads(snap.metrics_json)
         if key in metrics:
-            series.append({"ts": ts, "value": metrics[key]})
+            series.append({
+                "ts": snap.ts.isoformat() if snap.ts else None,
+                "value": metrics[key],
+            })
 
     return {"ok": True, "repo": repo, "key": key, "series": series}
     
@@ -824,22 +814,17 @@ async def metrics_series(repo: str, key: str, limit: int = 100) -> dict:
 @mcp.tool()
 async def org_collect(org_id: str) -> dict:
     """Run snapshot collection for all tracked repos in an org."""
-    # 1) read tracked repos
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        rows = conn.execute(
-            "SELECT repo FROM tracked_repos WHERE org_id=? AND is_tracked=1",
-            (org_id,),
-        ).fetchall()
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        rows = session.query(TrackedRepo).filter_by(
+            org_id=org_id,
+            is_tracked=True,
+        ).all()
+        repos = [r.repo for r in rows]
 
-    repos = [r[0] for r in rows]
-
-    # 2) collect snapshot for each repo
+    # Collect snapshot for each repo (calls GitHub API)
     results = []
     for repo in repos:
-        out = await snapshot_collect.fn(repo=repo)  # call underlying function
+        out = await snapshot_collect.fn(repo=repo)
         results.append({"repo": repo, "ts": out["ts"], "metrics": out["metrics"]})
 
     return {"ok": True, "org_id": org_id, "repos_count": len(repos), "collected": results}
