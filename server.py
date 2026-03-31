@@ -448,14 +448,8 @@ async def ledger_get(repo: str) -> dict:
     """Fetch the current ledger state for a repository, if it exists."""
     parse_repo(repo)
 
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        row = conn.execute(
-            "SELECT summary, constraints, next_steps, last_verified_sha, updated_at FROM ledger_state WHERE repo=?",
-            (repo,),
-        ).fetchone()
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        row = session.query(LedgerState).filter_by(repo=repo).first()
 
     if not row:
         return {
@@ -468,18 +462,16 @@ async def ledger_get(repo: str) -> dict:
             "last_verified_sha": None,
         }
 
-    summary, constraints, next_steps, last_verified_sha, updated_at = row
     return {
         "ok": True,
         "repo": repo,
         "exists": True,
-        "summary": summary,
-        "constraints": constraints,
-        "next_steps": next_steps,
-        "last_verified_sha": last_verified_sha,
-        "updated_at": updated_at,
+        "summary": row.summary,
+        "constraints": row.constraints,
+        "next_steps": row.next_steps,
+        "last_verified_sha": row.last_verified_sha,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
-
 
 @mcp.tool()
 async def ledger_set(
@@ -492,20 +484,29 @@ async def ledger_set(
     """Upsert the ledger state for a repository."""
     parse_repo(repo)
 
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        conn.execute(
-            "INSERT INTO ledger_state(repo, summary, constraints, next_steps, last_verified_sha) VALUES(?, ?, ?, ?, ?) "
-            "ON CONFLICT(repo) DO UPDATE SET "
-            "summary=excluded.summary, constraints=excluded.constraints, next_steps=excluded.next_steps, "
-            "last_verified_sha=excluded.last_verified_sha, updated_at=datetime('now')",
-            (repo, summary, constraints, next_steps, last_verified_sha),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        existing = session.query(LedgerState).filter_by(repo=repo).first()
+
+        if existing:
+            existing.summary = summary
+            existing.constraints = constraints
+            existing.next_steps = next_steps
+            existing.last_verified_sha = last_verified_sha
+            # updated_at auto-updates via onupdate=func.now() in the model
+        else:
+            new_state = LedgerState(
+                repo=repo,
+                summary=summary,
+                constraints=constraints,
+                next_steps=next_steps,
+                last_verified_sha=last_verified_sha,
+            )
+            session.add(new_state)
+
+        session.commit()
 
     return {"ok": True, "repo": repo, "last_verified_sha": last_verified_sha}
+
 
 @mcp.tool()
 async def ledger_record_turn(repo: str, user_text: str, assistant_text: str) -> dict:
@@ -519,12 +520,9 @@ async def ledger_record_turn(repo: str, user_text: str, assistant_text: str) -> 
     }
 
     # 1) Load last_verified_sha from ledger_state
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        row = conn.execute("SELECT last_verified_sha FROM ledger_state WHERE repo=?", (repo,)).fetchone()
-        last_verified_sha = row[0] if row else None
-    finally:
-        conn.close()
+    with SessionLocal() as session:
+        state = session.query(LedgerState).filter_by(repo=repo).first()
+        last_verified_sha = state.last_verified_sha if state else None
 
     # 2) Find default branch + head sha
     async with httpx.AsyncClient(timeout=20) as client:
@@ -534,7 +532,7 @@ async def ledger_record_turn(repo: str, user_text: str, assistant_text: str) -> 
         diff_summary = None
         base_sha = last_verified_sha
 
-        # 3) If we have a baseline, compute diff receipts (REQUIRED verification)
+        # 3) If we have a baseline, compute diff receipts
         if last_verified_sha and last_verified_sha != head_sha:
             cmp_url = f"https://api.github.com/repos/{owner}/{name}/compare/{last_verified_sha}...{head_sha}"
             cmp_resp = await client.get(cmp_url, headers=headers)
@@ -554,32 +552,33 @@ async def ledger_record_turn(repo: str, user_text: str, assistant_text: str) -> 
             else:
                 diff_summary = {"error": cmp_resp.text[:300], "status": cmp_resp.status_code}
 
-        # 4) Append event + 5) update state.last_verified_sha=head_sha
-        conn = sqlite3.connect(LEDGER_DB_PATH)
-        try:
-            # Ensure state row exists
-            conn.execute(
-                "INSERT INTO ledger_state(repo, summary, constraints, next_steps, last_verified_sha) VALUES(?, ?, ?, ?, ?) "
-                "ON CONFLICT(repo) DO UPDATE SET last_verified_sha=excluded.last_verified_sha, updated_at=datetime('now')",
-                (repo, "", "", "", head_sha),
-            )
+    # 4) Write event + update state in one transaction
+    with SessionLocal() as session:
+        # Ensure state row exists and update sha
+        state = session.query(LedgerState).filter_by(repo=repo).first()
+        if state:
+            state.last_verified_sha = head_sha
+        else:
+            session.add(LedgerState(
+                repo=repo,
+                summary="",
+                constraints="",
+                next_steps="",
+                last_verified_sha=head_sha,
+            ))
 
-            conn.execute(
-                "INSERT INTO ledger_events(repo, user_text, assistant_text, head_sha, base_sha, diff_json, verification_note) "
-                "VALUES(?, ?, ?, ?, ?, ?, ?)",
-                (
-                    repo,
-                    user_text,
-                    assistant_text,
-                    head_sha,
-                    base_sha,
-                    json.dumps(diff_summary) if diff_summary is not None else None,
-                    "GitHub head sha recorded; diff recorded when baseline existed.",
-                ),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        # Append the event
+        session.add(LedgerEvent(
+            repo=repo,
+            user_text=user_text,
+            assistant_text=assistant_text,
+            head_sha=head_sha,
+            base_sha=base_sha,
+            diff_json=json.dumps(diff_summary) if diff_summary is not None else None,
+            verification_note="GitHub head sha recorded; diff recorded when baseline existed.",
+        ))
+
+        session.commit()
 
     return {
         "ok": True,
@@ -588,6 +587,7 @@ async def ledger_record_turn(repo: str, user_text: str, assistant_text: str) -> 
         "head_sha": head_sha,
         "diff_recorded": diff_summary is not None,
     }
+
 
 
 @mcp.tool()
