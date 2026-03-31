@@ -1,19 +1,29 @@
 # CEO Engineering Cockpit
 
-> **"A Startup Execution Console, not a dashboard."**
-> Setup in minutes, not weeks. Priced for teams of 5–50, not enterprise bloat.
+> **"Your AI chief-of-staff for engineering execution."**
+> Brief-first. Benchmark-aware. AI that discovers what nobody programmed. Setup in 5 minutes.
 
-See [VISION.md](VISION.md) for the full product thesis and V1/V2/V3 roadmap.
+See [VISION.md](VISION.md) for the full product thesis, dashboard design spec, competitive analysis, and V1/V2/V3 roadmap.
 
 ---
 
 ## What This Is
 
-A tool that turns GitHub activity (and soon Linear milestones) into execution intelligence for startup founders and CTOs. Three layers:
+An AI-native tool that turns GitHub activity into execution intelligence for startup founders. What no competitor gives small teams:
 
-1. **Truth Layer** — deterministic metrics from real GitHub events. Never hallucinated.
-2. **Meaning Layer** — LLM-generated narrative: risks, actions, forecasts (always cites signals, always labels speculation).
-3. **Fun Layer** — scores, streaks, leaderboards. Team-level health, never surveillance.
+1. **AI briefs, not dashboards** — a paragraph that says what shipped, what slipped, what to do
+2. **World context** — how you compare to industry benchmarks and AI adoption trends
+3. **Emergent pattern discovery** — AI finds patterns nobody programmed ("your velocity drops 35% every Thursday")
+4. **Investor updates** — one click generates a draft to edit and forward
+
+Four layers:
+
+| Layer | What | Example |
+|-------|------|---------|
+| Truth | Deterministic metrics from GitHub | "47 commits, 8 PRs merged this week" |
+| Context | Industry benchmarks + AI detection | "Top 25% for team size. 38% AI-assisted (avg: 30%)" |
+| Meaning | AI narrative + emergent discovery | "Auth is stuck. Thursday velocity dip detected." |
+| Fun | Scores, streaks, team leaderboard | "Frontend on a 3-week shipping streak" |
 
 ---
 
@@ -22,148 +32,131 @@ A tool that turns GitHub activity (and soon Linear milestones) into execution in
 ### Architecture
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                     server.py (MCP server)                │
-│                                                          │
-│  MCP Tools ──→ db.py (sessions) ──→ models.py (schema)  │
-│                       ↓                                  │
-│               PostgreSQL 16 (Docker)                     │
-│                                                          │
-│  GitHub API ←── httpx (async HTTP client)                │
-└──────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────┐
+│                     server.py (MCP server)                         │
+│                                                                    │
+│  MCP Tools ──→ db.py (sessions) ──→ models.py (schema)            │
+│                       ↓                                            │
+│               PostgreSQL 16 (Docker)                               │
+│  GitHub API ←── httpx (async HTTP client)                          │
+├────────────────────────────────────────────────────────────────────┤
+│  PLANNED:                                                          │
+│  benchmarks.py ──→ industry data (DORA, 800K+ PRs research)       │
+│  ceo_brief ──→ org_dashboard + time-series + web_search            │
+│            ──→ LLM: narrative + pattern discovery + priority picks  │
+│  FastAPI HTTP ──→ React Dashboard (brief-first, Apple-level UX)    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Files
 
-| File | Job | One-line summary |
-|------|-----|-----------------|
-| `server.py` | Features | MCP tools + GitHub API calls + scoring logic |
-| `models.py` | Schema | SQLAlchemy ORM models (4 tables) |
-| `db.py` | Plumbing | Postgres engine, connection pool, session factory |
-| `test.py` | Testing | MCP client test harness via SSE |
-| `.env` | Secrets | GITHUB_TOKEN + DATABASE_URL (never committed) |
+| File | Job | Summary |
+|------|-----|---------|
+| `server.py` | Features | MCP tools + GitHub API + scoring + alerts |
+| `models.py` | Schema | SQLAlchemy ORM (4 tables) |
+| `db.py` | Plumbing | Postgres engine, pool, sessions |
+| `test.py` | Testing | MCP client harness via SSE |
+| `.env` | Secrets | GITHUB_TOKEN + DATABASE_URL |
+| `benchmarks.py` | Context | Industry benchmark data (PLANNED) |
 
 ### Database (PostgreSQL 16 in Docker)
 
 | Table | Purpose | Status |
 |-------|---------|--------|
 | `tracked_repos` | Which repos an org monitors | ✅ Postgres |
-| `snapshots` | Time-series activity metrics per repo | ✅ Postgres |
-| `ledger_state` | Current execution summary per repo | ✅ Postgres |
-| `ledger_events` | Conversation history + verification receipts | ✅ Postgres |
+| `snapshots` | Time-series metrics per repo | ✅ Postgres |
+| `ledger_state` | Execution summary per repo | ✅ Postgres |
+| `ledger_events` | Conversation history | ✅ Postgres |
 
-### MCP Tools
+### MCP Tools → Dashboard Mapping
 
-| Tool | Purpose | DB |
-|------|---------|-----|
-| `ping` | Health check | — |
-| `list_commits` | Latest commits from GitHub API | — |
-| `get_file` | Read file/dir from GitHub API | — |
-| `compare` | Diff two Git refs | — |
-| `repos_add` | Track a repo for an org | ✅ Postgres |
-| `repos_list` | List tracked repos | ✅ Postgres |
-| `repos_remove` | Soft-delete a tracked repo | ✅ Postgres |
-| `snapshot_collect` | Fetch GitHub metrics, save snapshot | ✅ Postgres |
-| `metrics_series` | Time-ordered series for one metric | ✅ Postgres |
-| `org_collect` | Collect snapshots for all tracked repos | ✅ Postgres |
-| `org_dashboard` | Tiles + repos + leaderboard + alerts | 🔲 SQLite (NEXT) |
-| `ledger_get` | Read current repo execution state | ✅ Postgres |
-| `ledger_set` | Write/update repo execution state | ✅ Postgres |
-| `ledger_record_turn` | Record conversation + GitHub diff | ✅ Postgres |
+| Tool | DB | Feeds |
+|------|-----|-------|
+| `repos_add/list/remove` | ✅ | Setup |
+| `snapshot_collect` | ✅ | Snapshots + AI commit detection |
+| `metrics_series` | ✅ | Time-series for pattern discovery |
+| `org_collect` | ✅ | Batch collection |
+| `org_dashboard` | 🔧 Migrating | Tiles, context, repos, alerts, leaderboard |
+| `ledger_get/set/record_turn` | ✅ | Execution state |
+| `ceo_brief` | 🔲 Step B | Brief card, patterns card, investor update |
 
 ### Scoring
 
 ```
-repo_score = 10 × merged_prs_7d + commits_24h + 0.2 × commits_7d
+repo_score    = 10 × merged_prs_7d + commits_24h + 0.2 × commits_7d
+team_health   = max(0, 100 - (high_alerts × 25) - (warn_alerts × 10))
+ai_assisted%  = ai_commits_7d / total_commits_7d × 100
 ```
-
-### Alerts
-
-- **STALE (warn)**: no commits in 7+ days
-- **STALE (high)**: no commits in 14+ days
-- **LOW_ENGAGEMENT**: ≤1 active dev AND ≤2 commits in 7 days
 
 ---
 
-## Next Steps (in order)
+## Next Steps
 
-### Step A.5: Finish Postgres Migration
-- Migrate `org_dashboard` to Postgres (the biggest tool)
-- Remove all SQLite code (import sqlite3, init_ledger_db, LEDGER_DB_PATH)
-- Clean up, full test, commit
+### Step A.5: Finish Postgres Migration + AI Detection
+- Migrate `org_dashboard` to Postgres (last SQLite tool)
+- Remove all SQLite code
+- Add AI-assisted commit detection to `snapshot_collect`
 
-### Step B: LLM Analyst (`ceo_brief` tool)
-- `ceo_brief(org_id, mode="facts|balanced|speculative")`
-- Calls `org_dashboard()` → feeds data to LLM → returns narrative
-- Swappable LLM provider (Claude, OpenAI, local) via abstraction layer
-- Output: summary, risks, actions, forecasts with disclaimers
+### Step B: LLM Analyst (`ceo_brief`)
+- `ceo_brief(org_id, mode="facts|balanced|speculative|investor")`
+- Calls `org_dashboard()` + `metrics_series()` for full history
+- Optional web search for external intelligence
+- LLM generates: narrative + emergent patterns + priority benchmarks
+- Investor mode reformats for forwarding
 
-### Step C: React Dashboard UI
-- FastAPI HTTP API (coexists with FastMCP for AI access)
-- Dark-mode CEO-grade dashboard
-- Tiles + leaderboard + alert feed + AI brief card
-- "First 3 minutes" wow factor
+### Step B.5: Context Layer (`benchmarks.py`)
+- Industry data from DORA + research
+- `org_dashboard` returns percentile rankings and context object
+- Team health, trends, AI adoption metrics
+- LLM picks which benchmarks matter this week (dynamic, not static)
+
+### Step C: React Dashboard (Apple-level UX)
+- FastAPI HTTP API layer
+- Brief card (hero) → tiles with benchmarks → velocity line chart → AI patterns card → alerts → repos + leaderboard
+- Smooth line charts (tension 0.4, gradient fill, no point markers)
+- Mini line charts on repo cards (12-point curves colored by health)
+- Dark mode default, mobile-responsive
+- "Copy as investor update" button
 
 ### Step D: V1.1 Metrics
-- PR cycle time + stage breakdown (coding → pickup → review → merge)
-- Time to first review, review latency
-- Stale PR count, deploy frequency proxy
+- PR cycle time, review speed (benchmarked)
+- Deploy frequency proxy, AI adoption trend over time
 
 ### Step E: Linear Integration (V1b)
-- Connect Linear API, ingest milestones and issues
-- Milestones become the main object (not repos)
-- Risk detection across GitHub + Linear
 
 ---
 
 ## How to Run
 
-### Prerequisites
-- Python 3.10+ (managed with `uv`)
-- Docker Desktop (for Postgres)
-
-### Setup
-
 ```bash
 # 1. Install deps
 uv sync
 
-# 2. Start Postgres (skip if already running — check with: docker ps)
+# 2. Start Postgres
 docker run --name ceo-cockpit-db \
-  -e POSTGRES_USER=cockpit \
-  -e POSTGRES_PASSWORD=cockpit_dev \
-  -e POSTGRES_DB=cockpit \
-  -p 5432:5432 \
-  -d postgres:16
+  -e POSTGRES_USER=cockpit -e POSTGRES_PASSWORD=cockpit_dev \
+  -e POSTGRES_DB=cockpit -p 5432:5432 -d postgres:16
 
-# 3. Set secrets (create .env if it doesn't exist)
-# .env should contain:
+# 3. Set secrets in .env:
 # GITHUB_TOKEN=ghp_your_token_here
 # DATABASE_URL=postgresql+psycopg2://cockpit:cockpit_dev@localhost:5432/cockpit
 
 # 4. Create tables
 uv run python -c "from db import init_db; init_db()"
 
-# 5. Start the MCP server
+# 5. Start server
 uv run python server.py
+
+# 6. Test (separate terminal)
+SAMPLE_REPOS="octocat/Hello-World:Hello,psf/requests:Requests" uv run python test.py
 ```
 
-### Test
+### Docker
 
 ```bash
-# In a separate terminal (server must be running)
-uv run python test.py
-```
-
-### Docker Quick Reference
-
-```bash
-docker ps                          # is Postgres running?
-docker start ceo-cockpit-db        # restart stopped container
-docker logs ceo-cockpit-db         # check Postgres logs
-docker exec -it ceo-cockpit-db psql -U cockpit -d cockpit   # interactive SQL
-docker exec -it ceo-cockpit-db psql -U cockpit -d cockpit -c "\dt"  # list tables
-docker exec -it ceo-cockpit-db psql -U cockpit -d cockpit -c "SELECT * FROM tracked_repos;"
+docker ps                          # running?
+docker start ceo-cockpit-db        # restart
+docker exec -it ceo-cockpit-db psql -U cockpit -d cockpit  # SQL shell
 ```
 
 ---
@@ -172,75 +165,68 @@ docker exec -it ceo-cockpit-db psql -U cockpit -d cockpit -c "SELECT * FROM trac
 
 | Layer | Tool | Why |
 |-------|------|-----|
-| Language | Python 3.10+ | AI/data ecosystem, FastAPI, SQLAlchemy |
-| Package manager | uv | Fast, modern Python packaging |
-| Database | PostgreSQL 16 | Concurrent reads/writes, JSONB, production-grade |
-| ORM | SQLAlchemy 2.0 | Type-safe models, connection pooling, DB-portable |
-| DB driver | psycopg2-binary | Standard Postgres driver for Python |
-| AI protocol | FastMCP (MCP/SSE) | Standardized tool interface for LLMs |
-| HTTP client | httpx (async) | GitHub API calls |
-| Containerization | Docker | Isolated Postgres, reproducible environments |
-| Version control | Git + GitHub | `hoodapush013-coder/ceo-cockpit` |
-
----
-
-## Git Workflow
-
-```bash
-# Before pushing — 3-second sanity check:
-git config user.name          # should be: hoodapush013-coder
-git remote -v                 # should point to: github.com-hoodapush013-coder:...
-git branch                    # should be: main
-
-# SSH host alias ensures pushes go to the right account
-# Config lives in ~/.ssh/config under Host github.com-hoodapush013-coder
-```
+| Language | Python 3.10+ | AI/data ecosystem |
+| Database | PostgreSQL 16 | JSONB, concurrent, production |
+| ORM | SQLAlchemy 2.0 | Type-safe, pooling |
+| AI protocol | FastMCP (MCP/SSE) | LLM tool interface |
+| HTTP | httpx (async) | GitHub API |
+| Container | Docker | Isolated Postgres |
+| Git | `hoodapush013-coder/ceo-cockpit` | SSH multi-account |
 
 ---
 
 ## Build Philosophy
 
-Every task follows this structure:
-1. **Goal**: what we're building, in plain English
-2. **Bigger picture**: where it fits in the system, who calls it, when it runs
-3. **Tiny examples**: inputs → outputs
-4. **Implement**: minimal working happy path
-5. **Harden**: error handling only AFTER it works
-6. **Commit**: after each milestone
-7. **Update README + VISION**: after every change so next chat knows the state
+1. Goal in plain English → 2. Bigger picture → 3. Tiny examples → 4. Implement happy path → 5. Harden → 6. Commit → 7. Update docs
 
 ---
 
-## Learning Journal (System Design & CS Concepts)
+## Learning Journal
 
-Concepts covered while building this project:
+### Architecture & System Design
+- Four-layer model: truth / context / meaning / fun
+- Brief-first design: narrative as primary product, dashboard as drill-down
+- Progressive disclosure: headline → numbers → comparison → detail
+- Single source of truth: org_dashboard feeds both UI and LLM
+- Rule-based vs emergent intelligence: hardcoded alerts vs LLM-discovered patterns
+- Dynamic benchmark selection: AI picks what's relevant this week
+- Read-heavy aggregation: dashboards join tables + compute
+- "One concern per change": migrate first, improve later
+- MCP (AI door) vs FastAPI (human door)
+- Connection pools, factory pattern, separation of concerns
 
-**Architecture & System Design:**
-- Separation of Concerns — models.py (schema) / db.py (plumbing) / server.py (features)
-- Three-layer product model — truth layer / meaning layer / fun layer
-- Refactoring — swap internals without changing external API (Liskov Substitution)
-- MCP Protocol — standardized tool interface for LLMs (AI-facing door), vs HTTP/FastAPI (human-facing door)
-- Connection Pools — reuse database connections instead of open/close per request
-- Factory Pattern — sessionmaker configures once, creates many sessions
-- LLM as swappable commodity — provider abstraction, AI is a component not the product
-- Data ownership — truth layer in YOUR database, AI only narrates what truth layer contains
+### Context Layer (unique competitive advantage)
+- Industry benchmarking: team metrics vs published research
+- AI tool detection: Copilot/Cursor patterns in commit trailers
+- External intelligence: web search for framework releases, trends
+- Percentile computation: raw numbers → meaningful rankings
+- Emergent pattern discovery: LLM analyzes full time-series for non-obvious patterns
+- Dynamic relevance: LLM decides which benchmarks matter this week
+- Benchmark lifecycle: hardcoded → web-updated → customer-aggregate
 
-**Database & ORM:**
-- PostgreSQL vs SQLite — server DB vs embedded DB, MVCC concurrency, SERIAL auto-increment
-- SQLAlchemy ORM — Base class, Column types/constraints, sessions, query/filter/commit
-- CRUD — Create (add), Read (query/filter), Update (change attribute + commit), Delete
-- server_default vs default — database clock vs Python clock for timestamps
-- Composite Primary Keys — (org_id, repo) together must be unique
-- TIMESTAMP WITH TIME ZONE — always store timezone-aware timestamps
-- session.refresh() — reload auto-generated fields (id, ts) after commit
+### Dashboard Design (Apple principles)
+- Remove everything unnecessary, make what remains feel alive
+- Line charts over bar charts (trajectory over snapshot)
+- Smooth curves (tension 0.4), gradient fills, no point markers until hover
+- Typography: tight letter-spacing on headlines, generous line-height on body
+- Two font weights only: regular (400) and medium (500)
+- Every chart must answer a specific question or be removed
+- Dark mode default, generous whitespace
 
-**Python Fundamentals:**
-- Classes and Objects — blueprints vs instances, __init__, self, __repr__
-- Context Managers — `with` guarantees cleanup (sessions, HTTP clients, files)
-- Environment Variables — DATABASE_URL pattern, .env files, sensible defaults
+### Database & ORM
+- PostgreSQL vs SQLite, SQLAlchemy ORM, CRUD
+- server_default vs default, composite primary keys
+- TIMESTAMP WITH TIME ZONE, session.refresh()
+- N+1 query avoidance
 
-**DevOps & Git:**
-- Docker — containers vs images, port mapping, isolated environments
-- SSH Multi-Account — host aliases in ~/.ssh/config, IdentitiesOnly, per-repo git identity
-- Git Workflow — staging → commit → push, .gitignore, meaningful commit messages
-- GitHub Integration — Claude Projects can sync repo files for AI-assisted development
+### Product & Business
+- Numbers without context = noise. Context transforms data into insight.
+- Investor update as viral loop: make users look smart to their investors
+- 5-minute setup test: every extra step loses customers
+- Pricing as positioning: free + $12/dev = "for startups"
+- Emergent AI as moat: competitors can copy features, not accumulated intelligence
+- Data over time is the competitive advantage: more history = better patterns
+
+### Python & DevOps
+- Classes/objects, context managers, env vars, lists vs dicts vs objects
+- Docker, SSH multi-account, Git workflow
