@@ -3,25 +3,18 @@
 > **"Your AI chief-of-staff for engineering execution."**
 > Brief-first. Benchmark-aware. AI that discovers what nobody programmed. Setup in 5 minutes.
 
-See [VISION.md](VISION.md) for the full product thesis, dashboard design spec, competitive analysis, and V1/V2/V3 roadmap.
+See [VISION.md](VISION.md) for the full product thesis, dashboard design spec, competitive analysis, and build plan.
 
 ---
 
 ## What This Is
 
-An AI-native tool that turns GitHub activity into execution intelligence for startup founders. What no competitor gives small teams:
-
-1. **AI briefs, not dashboards** — a paragraph that says what shipped, what slipped, what to do
-2. **World context** — how you compare to industry benchmarks and AI adoption trends
-3. **Emergent pattern discovery** — AI finds patterns nobody programmed ("your velocity drops 35% every Thursday")
-4. **Investor updates** — one click generates a draft to edit and forward
-
-Four layers:
+An AI-native tool that turns GitHub activity into execution intelligence for startup founders. Four layers:
 
 | Layer | What | Example |
 |-------|------|---------|
 | Truth | Deterministic metrics from GitHub | "47 commits, 8 PRs merged this week" |
-| Context | Industry benchmarks + AI detection | "Top 25% for team size. 38% AI-assisted (avg: 30%)" |
+| Context | Benchmarks + AI detection | "Top 25% for team size. 38% AI-assisted (avg: 30%)" |
 | Meaning | AI narrative + emergent discovery | "Auth is stuck. Thursday velocity dip detected." |
 | Fun | Scores, streaks, team leaderboard | "Frontend on a 3-week shipping streak" |
 
@@ -42,22 +35,21 @@ Four layers:
 ├────────────────────────────────────────────────────────────────────┤
 │  PLANNED:                                                          │
 │  benchmarks.py ──→ industry data (DORA, 800K+ PRs research)       │
-│  ceo_brief ──→ org_dashboard + time-series + web_search            │
-│            ──→ LLM: narrative + pattern discovery + priority picks  │
+│  ceo_brief ──→ org_dashboard + time-series + web_search + LLM     │
 │  FastAPI HTTP ──→ React Dashboard (brief-first, Apple-level UX)    │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Files
 
-| File | Job | Summary |
-|------|-----|---------|
-| `server.py` | Features | MCP tools + GitHub API + scoring + alerts |
-| `models.py` | Schema | SQLAlchemy ORM (4 tables) |
-| `db.py` | Plumbing | Postgres engine, pool, sessions |
-| `test.py` | Testing | MCP client harness via SSE |
-| `.env` | Secrets | GITHUB_TOKEN + DATABASE_URL |
-| `benchmarks.py` | Context | Industry benchmark data (PLANNED) |
+| File | Job | Summary | Status |
+|------|-----|---------|--------|
+| `server.py` | Features | MCP tools + GitHub API + scoring + alerts | ✅ Active |
+| `models.py` | Schema | SQLAlchemy ORM (4 tables) | ✅ Active |
+| `db.py` | Plumbing | Postgres engine, pool, sessions | ✅ Active |
+| `test.py` | Testing | MCP client harness via SSE | ✅ Active |
+| `.env` | Secrets | GITHUB_TOKEN + DATABASE_URL | ✅ Active |
+| `benchmarks.py` | Context | Industry benchmark data | 🔲 Step 3 |
 
 ### Database (PostgreSQL 16 in Docker)
 
@@ -68,61 +60,162 @@ Four layers:
 | `ledger_state` | Execution summary per repo | ✅ Postgres |
 | `ledger_events` | Conversation history | ✅ Postgres |
 
-### MCP Tools → Dashboard Mapping
+### MCP Tools
 
-| Tool | DB | Feeds |
-|------|-----|-------|
-| `repos_add/list/remove` | ✅ | Setup |
-| `snapshot_collect` | ✅ | Snapshots + AI commit detection |
-| `metrics_series` | ✅ | Time-series for pattern discovery |
-| `org_collect` | ✅ | Batch collection |
-| `org_dashboard` | 🔧 Migrating | Tiles, context, repos, alerts, leaderboard |
-| `ledger_get/set/record_turn` | ✅ | Execution state |
-| `ceo_brief` | 🔲 Step B | Brief card, patterns card, investor update |
+| Tool | DB | Status | Feeds |
+|------|-----|--------|-------|
+| `ping` | — | ✅ | — |
+| `list_commits` | — | ✅ | — |
+| `get_file` | — | ✅ | — |
+| `compare` | — | ✅ | — |
+| `repos_add` | ✅ Postgres | ✅ | Setup |
+| `repos_list` | ✅ Postgres | ✅ | Setup |
+| `repos_remove` | ✅ Postgres | ✅ | Setup |
+| `snapshot_collect` | ✅ Postgres | ✅ (AI detection: Step 2) | Snapshots |
+| `metrics_series` | ✅ Postgres | ✅ | Time-series for discovery |
+| `org_collect` | ✅ Postgres | ✅ | Batch collection |
+| `org_dashboard` | ✅ Postgres | ⚠️ Missing 3 tile fields (Step 1) | Tiles, repos, alerts, leaderboard |
+| `ledger_get` | ✅ Postgres | ✅ | Execution state |
+| `ledger_set` | ✅ Postgres | ✅ | Execution state |
+| `ledger_record_turn` | ✅ Postgres | ✅ | Execution state |
+| `ceo_brief` | — | 🔲 Step 4 | Brief card, patterns, investor update |
+
+### org_dashboard tiles — what's there vs what's needed
+
+| Field | In output? | Step |
+|-------|-----------|------|
+| repos_tracked | ✅ Yes | — |
+| commits_24h_total | ✅ Yes | — |
+| commits_7d_total | ⚠️ Computed but not returned | Step 1a |
+| merged_prs_7d_total | ✅ Yes | — |
+| active_devs_total | ❌ Not computed | Step 1b |
+| activity_score_total | ✅ Yes | — |
+| team_health_score | ❌ Not computed | Step 1c |
+| ai_assisted_pct | ❌ Needs AI detection | Step 2 |
+| last_collection_ts | ✅ Yes | — |
+| trends | ❌ Needs historical comparison | Step 3 |
+| context object | ❌ Needs benchmarks.py | Step 3 |
 
 ### Scoring
 
 ```
 repo_score    = 10 × merged_prs_7d + commits_24h + 0.2 × commits_7d
-team_health   = max(0, 100 - (high_alerts × 25) - (warn_alerts × 10))
-ai_assisted%  = ai_commits_7d / total_commits_7d × 100
+team_health   = max(0, 100 - (high_alerts × 25) - (warn_alerts × 10))  ← Step 1c
+ai_assisted%  = ai_commits_7d / total_commits_7d × 100                 ← Step 2
 ```
+
+### Alerts
+
+- **STALE (high)**: no commits in 14+ days
+- **STALE (warn)**: no commits in 7+ days
+- **LOW_ENGAGEMENT**: ≤1 active dev AND ≤2 commits in 7d
 
 ---
 
-## Next Steps
+## Build Plan (Micro-Steps)
 
-### Step A.5: Finish Postgres Migration + AI Detection
-- Migrate `org_dashboard` to Postgres (last SQLite tool)
-- Remove all SQLite code
-- Add AI-assisted commit detection to `snapshot_collect`
+### ✅ Completed
 
-### Step B: LLM Analyst (`ceo_brief`)
-- `ceo_brief(org_id, mode="facts|balanced|speculative|investor")`
-- Calls `org_dashboard()` + `metrics_series()` for full history
-- Optional web search for external intelligence
-- LLM generates: narrative + emergent patterns + priority benchmarks
-- Investor mode reformats for forwarding
+| Step | What | Date |
+|------|------|------|
+| Task 12 | Leaderboard + alerts | Done |
+| Step A | PostgreSQL migration — all 14 tools, SQLite removed | 2026-03-31 |
 
-### Step B.5: Context Layer (`benchmarks.py`)
-- Industry data from DORA + research
-- `org_dashboard` returns percentile rankings and context object
-- Team health, trends, AI adoption metrics
-- LLM picks which benchmarks matter this week (dynamic, not static)
+### Step 1: org_dashboard tile fixes ← CURRENT
 
-### Step C: React Dashboard (Apple-level UX)
-- FastAPI HTTP API layer
-- Brief card (hero) → tiles with benchmarks → velocity line chart → AI patterns card → alerts → repos + leaderboard
-- Smooth line charts (tension 0.4, gradient fill, no point markers)
-- Mini line charts on repo cards (12-point curves colored by health)
-- Dark mode default, mobile-responsive
-- "Copy as investor update" button
+Complete the Truth Layer by adding missing fields to org_dashboard output.
 
-### Step D: V1.1 Metrics
-- PR cycle time, review speed (benchmarked)
-- Deploy frequency proxy, AI adoption trend over time
+| Sub-step | What | Change |
+|----------|------|--------|
+| 1a | Add `commits_7d_total` to tiles | Already computed, just add to tiles dict |
+| 1b | Add `active_devs_total` | New accumulator + add to tiles dict |
+| 1c | Add `team_health_score` | Count alerts by level, compute health score |
+| 1d | Test + commit | Verify all 8 tile fields present |
 
-### Step E: Linear Integration (V1b)
+### Step 2: AI commit detection in snapshot_collect
+
+Add Layer 2 (Context) data collection.
+
+| Sub-step | What |
+|----------|------|
+| 2a | Learn GitHub commit trailer format |
+| 2b | Add Copilot/Cursor pattern scanning to snapshot_collect |
+| 2c | Add `ai_assisted_commits` to metrics_json |
+| 2d | Add `ai_assisted_pct` to org_dashboard tiles |
+| 2e | Test + commit |
+
+### Step 3: benchmarks.py + context enrichment
+
+Build the comparison engine.
+
+| Sub-step | What |
+|----------|------|
+| 3a | Create benchmarks.py with DORA + research data |
+| 3b | Add percentile computation functions |
+| 3c | Add `context` object to org_dashboard output |
+| 3d | Add `trends` to tiles (week-over-week deltas) |
+| 3e | Test + commit |
+
+### Step 4: ceo_brief tool
+
+Build Layer 3 (Meaning) — the AI intelligence engine.
+
+| Sub-step | What |
+|----------|------|
+| 4a | Design LLM prompt structure |
+| 4b | Build ceo_brief tool (calls org_dashboard + metrics_series) |
+| 4c | Add facts/balanced/speculative modes |
+| 4d | Add discovery mode (emergent pattern detection) |
+| 4e | Add investor update mode |
+| 4f | Add dynamic benchmark selection |
+| 4g | Add external intelligence (optional web search) |
+| 4h | Test all modes + commit |
+
+### Step 5: FastAPI HTTP layer
+
+Serve the React dashboard.
+
+| Sub-step | What |
+|----------|------|
+| 5a | Add FastAPI alongside MCP server |
+| 5b | GET /api/dashboard (calls org_dashboard) |
+| 5c | GET /api/brief (calls ceo_brief) |
+| 5d | CORS config + test + commit |
+
+### Step 6: React Dashboard
+
+Apple-level UX. Brief-first layout.
+
+| Sub-step | What |
+|----------|------|
+| 6a | Vite + React + Tailwind setup |
+| 6b | Brief card (hero) |
+| 6c | Tiles row with benchmark lines |
+| 6d | Velocity line chart (smooth curves) |
+| 6e | AI patterns card |
+| 6f | Alerts bar |
+| 6g | Repo cards with mini line charts |
+| 6h | Leaderboard sidebar |
+| 6i | Dark mode + responsive |
+| 6j | "Copy as investor update" button |
+| 6k | Polish + commit |
+
+### Step 7: V1.1 Metrics
+
+| Sub-step | What |
+|----------|------|
+| 7a | PR cycle time |
+| 7b | Time to first review |
+| 7c | Deploy frequency proxy |
+| 7d | AI adoption trend over time |
+| 7e | Add to benchmarks.py |
+| 7f | Test + commit |
+
+### Future
+
+- Step 8: Linear integration (V1b)
+- Step 9: Slack + CI/CD (V2)
+- Step 10: Autonomous execution (V3)
 
 ---
 
@@ -177,7 +270,13 @@ docker exec -it ceo-cockpit-db psql -U cockpit -d cockpit  # SQL shell
 
 ## Build Philosophy
 
-1. Goal in plain English → 2. Bigger picture → 3. Tiny examples → 4. Implement happy path → 5. Harden → 6. Commit → 7. Update docs
+1. Goal in plain English
+2. Bigger picture: who calls it, when, why
+3. Tiny examples: inputs → outputs
+4. Implement happy path
+5. Harden (error handling AFTER it works)
+6. Test + commit
+7. Update README + VISION (ground truth, never drift)
 
 ---
 
@@ -185,48 +284,50 @@ docker exec -it ceo-cockpit-db psql -U cockpit -d cockpit  # SQL shell
 
 ### Architecture & System Design
 - Four-layer model: truth / context / meaning / fun
-- Brief-first design: narrative as primary product, dashboard as drill-down
+- Brief-first design: narrative as product, dashboard as drill-down
 - Progressive disclosure: headline → numbers → comparison → detail
 - Single source of truth: org_dashboard feeds both UI and LLM
-- Rule-based vs emergent intelligence: hardcoded alerts vs LLM-discovered patterns
-- Dynamic benchmark selection: AI picks what's relevant this week
-- Read-heavy aggregation: dashboards join tables + compute
+- Rule-based vs emergent intelligence: hardcoded alerts vs LLM discovery
+- Read-heavy aggregation: dashboards join tables + compute derived values
 - "One concern per change": migrate first, improve later
+- Ground truth audits: docs must match code reality at all times
 - MCP (AI door) vs FastAPI (human door)
 - Connection pools, factory pattern, separation of concerns
 
-### Context Layer (unique competitive advantage)
+### Context Layer (competitive advantage)
 - Industry benchmarking: team metrics vs published research
 - AI tool detection: Copilot/Cursor patterns in commit trailers
 - External intelligence: web search for framework releases, trends
-- Percentile computation: raw numbers → meaningful rankings
-- Emergent pattern discovery: LLM analyzes full time-series for non-obvious patterns
-- Dynamic relevance: LLM decides which benchmarks matter this week
+- Emergent pattern discovery: LLM analyzes full time-series
+- Dynamic relevance: LLM picks which benchmarks matter this week
 - Benchmark lifecycle: hardcoded → web-updated → customer-aggregate
 
 ### Dashboard Design (Apple principles)
 - Remove everything unnecessary, make what remains feel alive
 - Line charts over bar charts (trajectory over snapshot)
-- Smooth curves (tension 0.4), gradient fills, no point markers until hover
-- Typography: tight letter-spacing on headlines, generous line-height on body
-- Two font weights only: regular (400) and medium (500)
+- Smooth curves (tension 0.4), gradient fills
+- Two font weights: regular (400) and medium (500)
 - Every chart must answer a specific question or be removed
 - Dark mode default, generous whitespace
 
 ### Database & ORM
 - PostgreSQL vs SQLite, SQLAlchemy ORM, CRUD
-- server_default vs default, composite primary keys
-- TIMESTAMP WITH TIME ZONE, session.refresh()
-- N+1 query avoidance
+- Composite primary keys, TIMESTAMP WITH TIME ZONE
+- N+1 query avoidance, session.refresh()
+- Accumulators, running maximums, safe dict access (.get)
+- Negative indexing ([-1]), ternary expressions, truthiness
+- Generator expressions with sum()
 
 ### Product & Business
-- Numbers without context = noise. Context transforms data into insight.
-- Investor update as viral loop: make users look smart to their investors
-- 5-minute setup test: every extra step loses customers
+- Numbers without context = noise
+- Investor update as viral loop
+- 5-minute setup test
 - Pricing as positioning: free + $12/dev = "for startups"
-- Emergent AI as moat: competitors can copy features, not accumulated intelligence
-- Data over time is the competitive advantage: more history = better patterns
+- Data over time is the moat: more history = better patterns
+- Vision-code drift: documents must always match reality
 
 ### Python & DevOps
-- Classes/objects, context managers, env vars, lists vs dicts vs objects
+- Classes/objects, context managers, env vars
+- Lists vs dicts vs objects
 - Docker, SSH multi-account, Git workflow
+- The `continue` keyword in loops
