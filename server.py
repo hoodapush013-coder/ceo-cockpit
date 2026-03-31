@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 import httpx
 from fastmcp import FastMCP
 import base64
-import sqlite3
 import json
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -134,74 +133,8 @@ def repo_alerts(repo: str, display_name: str | None, metrics: dict) -> list[dict
 # Database location & schema
 # ---------------------------------------------------------------------------
 
-LEDGER_DB_PATH = Path(__file__).with_name("ledger.db")
 
 
-def init_ledger_db() -> None:
-   
-    """Create the SQLite schema if it does not already exist.
-
-    Tables:
-      - ledger_state: current per-repo summary/constraints/next-steps + last_verified_sha
-      - ledger_events: historical conversation turns and verification receipts
-      - tracked_repos: which repos belong to an org and should be tracked
-      - snapshots: time-series activity metrics per repo
-    """
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ledger_state (
-                repo TEXT PRIMARY KEY,
-                summary TEXT NOT NULL,
-                constraints TEXT NOT NULL,
-                next_steps TEXT NOT NULL,
-                last_verified_sha TEXT,
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ledger_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                repo TEXT NOT NULL,
-                ts TEXT NOT NULL DEFAULT (datetime('now')),
-                user_text TEXT NOT NULL,
-                assistant_text TEXT NOT NULL,
-                head_sha TEXT,
-                base_sha TEXT,
-                diff_json TEXT,          -- JSON string of changed files summary
-                verification_note TEXT   -- human note like "verified via compare"
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS tracked_repos (
-                org_id TEXT NOT NULL,
-                repo TEXT NOT NULL,
-                display_name TEXT,
-                is_tracked INTEGER NOT NULL DEFAULT 1,
-                added_at TEXT NOT NULL DEFAULT (datetime('now')),
-                PRIMARY KEY (org_id, repo)
-            )
-        """)
-      
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS snapshots (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                repo TEXT NOT NULL,
-                ts TEXT NOT NULL DEFAULT (datetime('now')),
-                metrics_json TEXT NOT NULL
-            )
-        """)
-
-
-
-        conn.commit()
-    finally:
-        conn.close()
-
-
-# Ensure schema exists as soon as the module is imported. This makes tools safe
-# to call from environments that do not manage migrations explicitly.
-init_ledger_db()
 init_db()
 
 
@@ -833,81 +766,89 @@ async def org_collect(org_id: str) -> dict:
 @mcp.tool()
 async def org_dashboard(org_id: str, spark_points: int = 20) -> dict:
     """Assemble a dashboard-ready view for an org: tiles + per-repo data."""
-    conn = sqlite3.connect(LEDGER_DB_PATH)
-    try:
-        # 1) get tracked repos (control plane)
-        rows = conn.execute(
-            "SELECT repo, display_name FROM tracked_repos "
-            "WHERE org_id=? AND is_tracked=1 "
-            "ORDER BY added_at ASC",
-            (org_id,),
-        ).fetchall()
+
+    with SessionLocal() as session:
+        # ── 1) Get tracked repos (control plane) ──────────────────────
+        tracked = session.query(TrackedRepo).filter_by(
+            org_id=org_id,
+            is_tracked=True,
+        ).order_by(TrackedRepo.added_at.asc()).all()
 
         repos = []
         commits_24h_total = 0
-        last_collection_ts = None
         commits_7d_total = 0
         merged_prs_7d_total = 0
+        last_collection_ts = None
         leaderboard = []
         alerts = []
 
+        # ── 2) For each repo, load snapshots + compute ────────────────
+        for tr in tracked:
+            repo = tr.repo
+            display_name = tr.display_name
 
-
-        # 2) for each repo, load latest snapshot (data plane history)
-        for repo, display_name in rows:
-            spark_rows = conn.execute(
-                "SELECT ts, metrics_json FROM snapshots "
-                "WHERE repo=? "
-                "ORDER BY id DESC "
-                "LIMIT ?",
-                (repo, spark_points),
-            ).fetchall()
+            # Sparkline data: last N snapshots, newest-first from DB
+            spark_rows = session.query(Snapshot).filter_by(
+                repo=repo,
+            ).order_by(Snapshot.id.desc()).limit(spark_points).all()
 
             spark_rows.reverse()  # oldest-first for graphing
 
-            keys = ["heartbeat", "commits_24h", "commits_7d", "active_devs_7d", "days_since_last_commit", "merged_prs_7d"]
-
+            keys = [
+                "heartbeat", "commits_24h", "commits_7d",
+                "active_devs_7d", "days_since_last_commit", "merged_prs_7d",
+            ]
             sparklines = {k: [] for k in keys}
 
-            for s_ts, s_json in spark_rows:
-                m = json.loads(s_json)
+            for snap in spark_rows:
+                m = json.loads(snap.metrics_json)
+                s_ts = snap.ts.isoformat() if snap.ts else None
                 for k in keys:
                     if k in m:
                         sparklines[k].append({"ts": s_ts, "value": m[k]})
 
+            # Latest snapshot (first element of our already-fetched list,
+            # but from the UN-reversed order, so the LAST element now)
+            latest = spark_rows[-1] if spark_rows else None
 
-
-            snap = conn.execute(
-                "SELECT ts, metrics_json FROM snapshots "
-                "WHERE repo=? "
-                "ORDER BY id DESC "
-                "LIMIT 1",
-                (repo,),
-            ).fetchone()
-
-            if snap is None:
-                repos.append({"repo": repo, "display_name": display_name, "ts": None, "metrics": {}, "sparklines": sparklines})
-                leaderboard.append({"repo": repo, "display_name": display_name, "score": 0.0})
+            if latest is None:
+                repos.append({
+                    "repo": repo,
+                    "display_name": display_name,
+                    "ts": None,
+                    "metrics": {},
+                    "sparklines": sparklines,
+                })
+                leaderboard.append({
+                    "repo": repo,
+                    "display_name": display_name,
+                    "score": 0.0,
+                })
                 continue
 
-            ts, metrics_json = snap
-            metrics = json.loads(metrics_json)
+            ts = latest.ts.isoformat() if latest.ts else None
+            metrics = json.loads(latest.metrics_json)
             score = repo_score(metrics)
-            leaderboard.append({"repo": repo, "display_name": display_name, "score": float(score)}) 
-            alerts.extend(repo_alerts(repo, display_name, metrics)) 
-            
-            c7 = metrics.get("commits_7d", 0)
-            if isinstance(c7, int):
-                commits_7d_total += c7
-            
-            mpr = metrics.get("merged_prs_7d", 0)
-            if isinstance(mpr, int):
-                merged_prs_7d_total += mpr
 
-            # tile aggregation (keep it simple)
+            leaderboard.append({
+                "repo": repo,
+                "display_name": display_name,
+                "score": float(score),
+            })
+            alerts.extend(repo_alerts(repo, display_name, metrics))
+
+            # Aggregate org-wide totals
             c24 = metrics.get("commits_24h", 0)
             if isinstance(c24, int):
                 commits_24h_total += c24
+
+            c7 = metrics.get("commits_7d", 0)
+            if isinstance(c7, int):
+                commits_7d_total += c7
+
+            mpr = metrics.get("merged_prs_7d", 0)
+            if isinstance(mpr, int):
+                merged_prs_7d_total += mpr
 
             if ts and (last_collection_ts is None or ts > last_collection_ts):
                 last_collection_ts = ts
@@ -920,21 +861,31 @@ async def org_dashboard(org_id: str, spark_points: int = 20) -> dict:
                 "score": float(score),
                 "sparklines": sparklines,
             })
-        activity_score_total = 10 * merged_prs_7d_total + commits_24h_total + 0.2 * commits_7d_total
+
+        # ── 3) Build final response ───────────────────────────────────
+        activity_score_total = (
+            10 * merged_prs_7d_total
+            + commits_24h_total
+            + 0.2 * commits_7d_total
+        )
         leaderboard.sort(key=lambda x: x.get("score", 0), reverse=True)
 
         tiles = {
-            "repos_tracked": len(rows),
+            "repos_tracked": len(tracked),
             "last_collection_ts": last_collection_ts,
             "commits_24h_total": commits_24h_total,
             "activity_score_total": activity_score_total,
             "merged_prs_7d_total": merged_prs_7d_total,
-
         }
 
-        return {"ok": True, "org_id": org_id, "tiles": tiles, "repos": repos,"leaderboard": leaderboard, "alerts": alerts}
-    finally:
-        conn.close()
+        return {
+            "ok": True,
+            "org_id": org_id,
+            "tiles": tiles,
+            "repos": repos,
+            "leaderboard": leaderboard,
+            "alerts": alerts,
+        }
 
 if __name__ == "__main__":
     # SSE is the classic HTTP transport for MCP servers
