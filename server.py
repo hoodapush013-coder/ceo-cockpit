@@ -779,6 +779,7 @@ async def org_dashboard(org_id: str, spark_points: int = 20) -> dict:
         commits_7d_total = 0
         merged_prs_7d_total = 0
         last_collection_ts = None
+        active_devs_total = 0
         leaderboard = []
         alerts = []
 
@@ -849,6 +850,10 @@ async def org_dashboard(org_id: str, spark_points: int = 20) -> dict:
             mpr = metrics.get("merged_prs_7d", 0)
             if isinstance(mpr, int):
                 merged_prs_7d_total += mpr
+            
+            adev = metrics.get("active_devs_7d", 0)
+            if isinstance(adev, int):
+                active_devs_total += adev
 
             if ts and (last_collection_ts is None or ts > last_collection_ts):
                 last_collection_ts = ts
@@ -870,12 +875,19 @@ async def org_dashboard(org_id: str, spark_points: int = 20) -> dict:
         )
         leaderboard.sort(key=lambda x: x.get("score", 0), reverse=True)
 
+        high_count = sum(1 for a in alerts if a.get("level") == "high")
+        warn_count = sum(1 for a in alerts if a.get("level") == "warn")
+        team_health_score = max(0, 100 - (high_count * 25) - (warn_count * 10))
+
         tiles = {
             "repos_tracked": len(tracked),
             "last_collection_ts": last_collection_ts,
             "commits_24h_total": commits_24h_total,
-            "activity_score_total": activity_score_total,
+            "commits_7d_total": commits_7d_total,
             "merged_prs_7d_total": merged_prs_7d_total,
+            "active_devs_total": active_devs_total,
+            "activity_score_total": activity_score_total,
+            "team_health_score": team_health_score,
         }
 
         return {
