@@ -14,23 +14,23 @@ An AI-native tool that turns GitHub activity into execution intelligence for sta
 | Layer | What | LLM? | Example |
 |-------|------|------|---------|
 | Truth | Deterministic metrics from GitHub | No | "47 commits, 8 PRs merged" |
-| Context | Benchmarks + AI detection | No | "Top 25% for team size. 38% AI-assisted" |
-| Meaning | AI narrative + code quality analysis | Yes | "Auth stuck. Thursday dip detected. Intelligence: 72" |
-| Fun | Scores, streaks, leaderboard | No | "Frontend on a 3-week shipping streak" |
+| Context | Benchmarks + AI detection | No (runtime) | "Top 25% for team size. 38% AI-assisted" |
+| Meaning | AI narrative + code quality + dev recognition | Yes | "Auth stuck. Alice built great observer pattern. IQ: 72" |
+| Fun | Scores, streaks, repo leaderboard, top 3 devs | Partial | Repo scores deterministic, dev recognition LLM-assessed |
 
-**The golden rule:** Layers 1, 2, 4 are deterministic (same input = same output, always). Layer 3 is where AI lives. AI interprets the data but never replaces it. If a deterministic number changes, the data changed. If an AI insight changes, the AI thought differently. Both are clearly labeled so the founder knows what to trust.
+**The golden rule:** Layers 1, 2 deterministic. Layer 3 is AI. Layer 4 mixes both (repo scores = formula, developer top 3 = LLM-assessed weekly).
 
-**Two scores:**
-- **Velocity** (Layer 1, daily, deterministic): How MUCH is the team shipping?
-- **Intelligence** (Layer 3, weekly, AI-assessed): How GOOD is the work?
+**Two scores:** Velocity (L1, daily, deterministic: how MUCH) + Intelligence (L3, weekly, AI: how GOOD).
 
-These can disagree — that's the point. Velocity 128 + Intelligence 45 = "Shipping fast but building fragile software."
+**Developer recognition:** Weekly top 3 contributors based on LLM's assessment of actual code quality — not commit counts (Goodhart's Law: gameable metrics create bad incentives). Shows only top 3, never bottom performers. Celebrates excellence.
 
-**Scheduling: newspaper, not live ticker.** Everything is pre-computed and stored. The founder opens the dashboard and it's already there. No loading spinners, no waiting for LLM. Like opening a newspaper, not refreshing a stock ticker.
+**Scheduling: newspaper, not live ticker.** Pre-computed and stored. Dashboard loads instantly.
+
+**DORA 2025:** AI is an amplifier, not a fixer. 90% use AI. AI increases throughput BUT instability. We track both.
 
 ---
 
-## Current State (updated 2026-04-01)
+## Current State (updated 2026-04-05)
 
 ### Architecture
 
@@ -39,18 +39,19 @@ These can disagree — that's the point. Velocity 128 + Intelligence 45 = "Shipp
 │                          server.py (MCP server)                            │
 │                                                                            │
 │  LAYER 1 (deterministic, NO LLM):                                         │
-│    snapshot_collect → counts metrics → snapshots table                     │
-│    org_dashboard → aggregates, scores (formula), rule alerts → response    │
+│    snapshot_collect → metrics + AI detection → snapshots table             │
+│    org_dashboard → aggregates, scores, alerts, tiles (10 fields) → JSON   │
 │                                                                            │
-│  LAYER 2 (deterministic, NO LLM):                                         │
+│  LAYER 2 (deterministic at runtime, NO LLM at runtime):                   │
 │    benchmarks.py → industry data → org_dashboard adds context (PLANNED)    │
 │                                                                            │
 │  LAYER 3 (LLM-powered, pre-generated + stored):                           │
 │    ceo_brief → narrative + patterns → briefs table (PLANNED)               │
-│    quality_analyze → code diffs + LLM → quality_assessments table (PLANNED)│
+│    quality_analyze → diffs + LLM → intelligence score + top 3 (PLANNED)   │
 │                                                                            │
-│  LAYER 4 (deterministic, NO LLM):                                         │
-│    Velocity scores, leaderboard, streaks → from Layer 1 data               │
+│  LAYER 4 (mixed):                                                          │
+│    Velocity scores, repo leaderboard (deterministic)                       │
+│    Top 3 contributors (from quality_analyze, LLM-assessed weekly)          │
 │                                                                            │
 │  Database: PostgreSQL 16 (Docker) ←→ SQLAlchemy ORM                        │
 │  GitHub API ←── httpx (async HTTP client)                                  │
@@ -65,14 +66,14 @@ These can disagree — that's the point. Velocity 128 + Intelligence 45 = "Shipp
 | Job | Frequency | Cost | LLM? | Tool |
 |-----|-----------|------|------|------|
 | Light collection | 1-2x daily | ~$0 | No | `org_collect` → `snapshot_collect` |
-| Brief generation | 1-2x daily | ~$0.10 | Yes | `ceo_brief` → stored in `briefs` table |
-| Deep analysis | Weekly | ~$1-2 | Yes | `quality_analyze` → stored in `quality_assessments` |
+| Brief generation | 1-2x daily | ~$0.10 | Yes | `ceo_brief` → `briefs` table |
+| Deep analysis | Weekly | ~$1-2 | Yes | `quality_analyze` → `quality_assessments` (includes top 3) |
 
 ### Files
 
 | File | Job | Status |
 |------|-----|--------|
-| `server.py` | MCP tools + GitHub API + scoring + alerts | ✅ Active |
+| `server.py` | MCP tools + GitHub API + scoring + alerts + AI detection | ✅ Active |
 | `models.py` | SQLAlchemy ORM (4 tables, 2 planned) | ✅ Active |
 | `db.py` | Postgres engine, pool, sessions | ✅ Active |
 | `test.py` | MCP client harness via SSE | ✅ Active |
@@ -81,80 +82,59 @@ These can disagree — that's the point. Velocity 128 + Intelligence 45 = "Shipp
 
 ### Database
 
-**Current tables (all ✅ Postgres):**
+**Current (all ✅ Postgres):** `tracked_repos`, `snapshots`, `ledger_state`, `ledger_events`
 
-| Table | Purpose | Layer |
-|-------|---------|-------|
-| `tracked_repos` | Which repos an org monitors | Setup |
-| `snapshots` | Time-series activity metrics per repo | L1 |
-| `ledger_state` | Execution summary per repo | L1 |
-| `ledger_events` | Conversation history | L1 |
-
-**Planned tables:**
-
-| Table | Purpose | Layer | Step |
-|-------|---------|-------|------|
-| `briefs` | Pre-generated AI narratives per org | L3 | Step 4 |
-| `quality_assessments` | Weekly code quality analysis per repo | L3 | Step 5 |
+**Planned:** `briefs` (Step 4), `quality_assessments` (Step 5 — includes per-dev assessments)
 
 ### MCP Tools
 
-| Tool | Layer | Status | Feeds |
-|------|-------|--------|-------|
-| `ping` | — | ✅ | — |
-| `list_commits` | — | ✅ | — |
-| `get_file` | — | ✅ | — |
-| `compare` | — | ✅ | Used by quality_analyze (Step 5) |
-| `repos_add` | Setup | ✅ | — |
-| `repos_list` | Setup | ✅ | — |
-| `repos_remove` | Setup | ✅ | — |
-| `snapshot_collect` | L1 | ✅ (AI detection: Step 2) | snapshots table |
-| `metrics_series` | L1 | ✅ | Time-series for ceo_brief discovery |
-| `org_collect` | L1 | ✅ | Triggers snapshot_collect for all repos |
-| `org_dashboard` | L1+L2 | ⚠️ 3 tile fields missing (Step 1) | Dashboard tiles, repos, alerts, leaderboard |
-| `ledger_get` | L1 | ✅ | Execution state |
-| `ledger_set` | L1 | ✅ | Execution state |
-| `ledger_record_turn` | L1 | ✅ | Execution state |
-| `ceo_brief` | L3 | 🔲 Step 4 | Brief card, patterns card, investor update |
-| `quality_analyze` | L3 | 🔲 Step 5 | Intelligence score, code quality insights |
+| Tool | Layer | Status |
+|------|-------|--------|
+| `ping` | — | ✅ |
+| `list_commits` / `get_file` / `compare` | — | ✅ |
+| `repos_add/list/remove` | Setup | ✅ |
+| `snapshot_collect` | L1 | ✅ + AI detection |
+| `metrics_series` | L1 | ✅ |
+| `org_collect` | L1 | ✅ |
+| `org_dashboard` | L1+L2 | ✅ tiles done, context pending (Step 3) |
+| `ledger_get/set/record_turn` | L1 | ✅ |
+| `ceo_brief` | L3 | 🔲 Step 4 |
+| `quality_analyze` | L3 | 🔲 Step 5 (includes per-dev assessment) |
 
-### org_dashboard tiles — what's there vs what's needed
+### org_dashboard tiles — current status
 
-| Field | Layer | In output? | Step |
-|-------|-------|-----------|------|
-| repos_tracked | L1 | ✅ Yes | — |
-| commits_24h_total | L1 | ✅ Yes | — |
-| commits_7d_total | L1 | ⚠️ Computed not returned | Step 1a |
-| merged_prs_7d_total | L1 | ✅ Yes | — |
-| active_devs_total | L1 | ❌ Not computed | Step 1b |
-| activity_score_total | L1 | ✅ Yes | — |
-| team_health_score | L1 | ❌ Not computed | Step 1c |
-| ai_assisted_pct | L1 | ❌ Needs AI detection | Step 2 |
-| last_collection_ts | L1 | ✅ Yes | — |
-| trends | L2 | ❌ Needs historical comparison | Step 3 |
-| context object | L2 | ❌ Needs benchmarks.py | Step 3 |
+| Field | Status |
+|-------|--------|
+| repos_tracked | ✅ |
+| commits_24h_total | ✅ |
+| commits_7d_total | ✅ Step 1 |
+| merged_prs_7d_total | ✅ |
+| active_devs_total | ✅ Step 1 |
+| activity_score_total | ✅ |
+| team_health_score | ✅ Step 1 |
+| ai_assisted_total | ✅ Step 2 |
+| ai_assisted_pct | ✅ Step 2 |
+| last_collection_ts | ✅ |
+| trends | 🔲 Step 3 |
+| context object | 🔲 Step 3 |
 
 ### Scoring (Layer 1, deterministic)
 
 ```
 velocity_score  = 10 × merged_prs_7d + commits_24h + 0.2 × commits_7d
-team_health     = max(0, 100 - (high_alerts × 25) - (warn_alerts × 10))  ← Step 1c
-ai_assisted_pct = ai_commits_7d / total_commits_7d × 100                 ← Step 2
+team_health     = max(0, 100 - (high_alerts × 25) - (warn_alerts × 10))
+ai_assisted_pct = ai_assisted_total / max(commits_7d_total, 1) × 100
 ```
 
-### Alerts
+### Alerts & Recognition
 
-**Rule-based (Layer 1, deterministic, always reliable):**
-- 🔴 **STALE (high)**: no commits in 14+ days
-- 🟡 **STALE (warn)**: no commits in 7+ days
-- 🟡 **LOW_ENGAGEMENT**: ≤1 active dev AND ≤2 commits in 7d
-
-**AI-discovered (Layer 3, from ceo_brief, labeled as AI):**
-- 🔵 Emergent patterns, trends, risks (generated weekly, not hardcoded)
+**Rule-based alerts (L1):** 🔴 Stale 14d+ / 🟡 Stale 7d+ / 🟡 Low engagement
+**AI-discovered insights (L3):** 🔵 Emergent patterns from ceo_brief (Step 4)
+**Developer recognition (L3):** 🥇🥈🥉 Top 3 contributors from quality_analyze (Step 5)
 
 ---
 
-## Build Plan (Micro-Steps)
+## Build Plan
 
 ### ✅ Completed
 
@@ -162,27 +142,10 @@ ai_assisted_pct = ai_commits_7d / total_commits_7d × 100                 ← St
 |------|------|------|
 | Task 12 | Leaderboard + alerts | Done |
 | Step A | PostgreSQL migration — all 14 tools, SQLite removed | 2026-03-31 |
+| Step 1 | org_dashboard tiles: commits_7d, active_devs, team_health | 2026-04-05 |
+| Step 2 | AI commit detection (Copilot/Claude/Cursor) in snapshots | 2026-04-05 |
 
-### Step 1: org_dashboard tile fixes ← CURRENT
-
-| Sub | What |
-|-----|------|
-| 1a | Add `commits_7d_total` to tiles (already computed, missing from dict) |
-| 1b | Add `active_devs_total` (new accumulator + tiles) |
-| 1c | Add `team_health_score` (count alerts, apply formula, add to tiles) |
-| 1d | Test + commit (health should be 65 for test data) |
-
-### Step 2: AI commit detection
-
-| Sub | What |
-|-----|------|
-| 2a | Learn GitHub commit trailer format |
-| 2b | Add Copilot/Cursor pattern scanning to snapshot_collect |
-| 2c | Add `ai_assisted_commits` to metrics_json |
-| 2d | Add `ai_assisted_pct` to org_dashboard tiles |
-| 2e | Test + commit |
-
-### Step 3: benchmarks.py + context
+### Step 3: benchmarks.py + context ← CURRENT
 
 | Sub | What |
 |-----|------|
@@ -196,74 +159,28 @@ ai_assisted_pct = ai_commits_7d / total_commits_7d × 100                 ← St
 
 | Sub | What |
 |-----|------|
-| 4a | Add `briefs` table to models.py |
-| 4b | Design LLM prompt |
-| 4c | Build ceo_brief tool |
-| 4d | facts / balanced / speculative modes |
-| 4e | Emergent pattern discovery |
-| 4f | Investor update mode |
-| 4g | Dynamic benchmark selection |
-| 4h | External intelligence (web search) |
-| 4i | Store in briefs table |
-| 4j | Test + commit |
+| 4a-4j | LLM prompt, narrative, patterns, investor mode, web search, store |
 
-### Step 5: quality_analyze + quality_assessments table
+### Step 5: quality_analyze + quality_assessments
 
 | Sub | What |
 |-----|------|
-| 5a | Add `quality_assessments` table to models.py |
-| 5b | Design quality analysis LLM prompt |
-| 5c | Build quality_analyze (reads week's merged PRs + diffs) |
-| 5d | LLM evaluates: architecture, design, tools, depth, flags |
-| 5e | Intelligence score (0-100) per repo |
-| 5f | Store in quality_assessments |
-| 5g | Wire into org_dashboard output |
-| 5h | Update ceo_brief to reference quality data |
-| 5i | Test + commit |
+| 5a-5k | Quality prompt, diffs, intelligence score, per-dev assessment, top 3, store, wire |
 
 ### Step 6: FastAPI HTTP layer
-
-| Sub | What |
-|-----|------|
-| 6a | FastAPI alongside MCP |
-| 6b | GET /api/dashboard |
-| 6c | GET /api/brief |
-| 6d | POST /api/brief/regenerate |
-| 6e | CORS + test + commit |
-
-### Step 7: React Dashboard
-
-| Sub | What |
-|-----|------|
-| 7a | Vite + React + Tailwind |
-| 7b | Brief card (hero, pre-loaded) |
-| 7c | Tiles with benchmark lines |
-| 7d | Velocity line chart (smooth, gradient, benchmark dashed line) |
-| 7e | Intelligence score badge |
-| 7f | AI patterns card |
-| 7g | Rule alerts bar (separate from AI insights) |
-| 7h | Repo cards with mini charts + IQ badge |
-| 7i | Leaderboard |
-| 7j | Dark mode + responsive |
-| 7k | "Copy as investor update" |
-| 7l | Polish + commit |
+### Step 7: React Dashboard (includes top 3 contributors card)
 
 ### Step 8: V1.1 Metrics
 
+Lead time: coding → pickup (92%!) → review → deploy. DORA 5th metric: rework rate.
+
 | Sub | What |
 |-----|------|
-| 8a | PR cycle time |
-| 8b | Time to first review |
-| 8c | Deploy frequency proxy |
-| 8d | New rule alerts: review bottleneck, large PR |
-| 8e | Add to benchmarks.py |
-| 8f | Test + commit |
+| 8a-8h | PR cycle time, first review, deploy freq, rework rate, AI instability, alerts |
 
 ### Future
 
-- Step 9: Linear integration (V1b)
-- Step 10: Slack + CI/CD (V2)
-- Step 11: Autonomous execution (V3)
+- Step 9: Linear (V1b) / Step 10: Slack+CI/CD (V2) / Step 11: DORA archetypes (V2) / Step 12: Autonomous (V3)
 
 ---
 
@@ -274,12 +191,9 @@ uv sync
 docker run --name ceo-cockpit-db \
   -e POSTGRES_USER=cockpit -e POSTGRES_PASSWORD=cockpit_dev \
   -e POSTGRES_DB=cockpit -p 5432:5432 -d postgres:16
-
-# .env: GITHUB_TOKEN=ghp_... and DATABASE_URL=postgresql+psycopg2://cockpit:cockpit_dev@localhost:5432/cockpit
-
+# .env: GITHUB_TOKEN + DATABASE_URL
 uv run python -c "from db import init_db; init_db()"
 uv run python server.py
-
 # Separate terminal:
 SAMPLE_REPOS="octocat/Hello-World:Hello,psf/requests:Requests" uv run python test.py
 ```
@@ -302,14 +216,7 @@ SAMPLE_REPOS="octocat/Hello-World:Hello,psf/requests:Requests" uv run python tes
 
 ## Build Philosophy
 
-1. Goal in plain English
-2. Bigger picture: who calls it, when, why, which layer
-3. Tiny examples: inputs → outputs
-4. Questions first: understand before coding
-5. Implement happy path
-6. Harden (error handling AFTER it works)
-7. Test + commit
-8. Update README + VISION (ground truth, never drift)
+1. Goal in plain English → 2. Bigger picture (who/when/why/which layer) → 3. Examples → 4. Questions first → 5. Implement → 6. Harden → 7. Test + commit → 8. Update docs
 
 ---
 
@@ -317,44 +224,51 @@ SAMPLE_REPOS="octocat/Hello-World:Hello,psf/requests:Requests" uv run python tes
 
 ### Architecture & System Design
 - Four-layer model: truth / context / meaning / fun
-- The golden rule: Layers 1, 2, 4 deterministic. Layer 3 is AI.
+- The golden rule: Layers 1, 2 deterministic. Layer 3 is AI. Layer 4 mixes both.
 - Thermometer vs doctor: data layer measures, AI layer interprets
 - Two-score system: velocity (how much) vs intelligence (how good)
-- Newspaper model: pre-compute and store, never make the user wait
-- Three job frequencies: light (daily), brief (daily), deep (weekly)
-- Brief-first design: narrative as product, dashboard as drill-down
+- Newspaper model: pre-compute and store, never make user wait
 - Single source of truth: org_dashboard feeds both UI and LLM
-- Rule-based alerts (reliable) vs AI insights (smart) — labeled differently
-- Ground truth audits: docs must match code reality at all times
-- Vision-code drift: the #1 cause of lost engineering teams
-- API-first development: get data contract right, then build UI
-- Pre-generated storage: LLM output stored in tables, loaded instantly
+- Rule alerts (reliable) vs AI insights (smart) — labeled differently
+- Ground truth audits: docs must match code reality
+- API-first: data contract right, then build UI
+- Constants at module level (AI_PATTERNS), not inside functions
+
+### Recognition vs Surveillance (Goodhart's Law)
+- Quantitative rankings (commit counts, lines of code) get GAMED
+- Goodhart's Law: "When a measure becomes a target, it ceases to be a good measure"
+- Solution: LLM-assessed quality recognition — reads actual code, can't be gamed
+- Show top 3 contributors (celebrate excellence), never bottom performers (don't shame)
+- Recognition based on engineering QUALITY, not typing QUANTITY
+
+### DORA 2025 Insights
+- AI amplifies, doesn't fix — strong teams get better, weak get worse
+- 90% adoption, 30% don't trust AI output
+- AI increases throughput AND instability — track both
+- 7 team archetypes: "Harmonious high-achievers" to "Legacy bottleneck"
+- Lead time: coding → pickup (92%!) → review → deploy
+- 5th metric: rework rate (2024)
+- Speed without stability = accelerated chaos
 
 ### Database & Data Flow
-- Accumulator pattern: initialize before loop, sum inside loop, use after loop
-- Running maximum: track best/latest as you iterate
-- Derived metrics: values computed from other computed values (health from alerts)
-- Safe dict access: .get("key", default) vs ["key"] (KeyError prevention)
-- isinstance checks: defensive programming against type mismatches
-- Negative indexing: [-1] for last element, check empty first
-- Ternary expressions: `value if condition else fallback`
-- Truthiness: empty list is False, non-empty is True
-- `continue` keyword: skip rest of loop iteration
-- Generator expressions: `sum(1 for x in list if condition)`
-- Why keys might be missing: schema evolution (new fields in new snapshots, old snapshots don't have them)
-- N+1 query avoidance, session.refresh(), composite primary keys
+- Accumulator pattern, running maximum, derived metrics
+- Safe dict access: .get(), isinstance checks
+- Negative indexing, ternary, truthiness, continue, break
+- Generator expressions: sum(1 for x in list if condition)
+- Division by zero guard: max(divisor, 1)
+- Schema evolution: old snapshots lack new keys
+
+### Python Fundamentals
+- = (assign) vs == (compare), colon after blocks
+- .lower() returns new string (immutable), "text" in string (quotes!)
+- snake_case variables, ALL_CAPS constants
+- Restart server after code changes
 
 ### Product & Business
-- Numbers without context = noise. Context transforms data into insight.
-- Velocity and intelligence can DISAGREE — that's the point
+- Numbers without context = noise
+- Velocity and intelligence can disagree — that's the point
 - Investor update as viral loop
-- 5-minute setup test
-- Pricing as positioning: free + $12/dev = "for startups"
-- Cost math: $60 revenue vs $12 AI cost = 80% margin
-- Data over time is the moat: more history = better patterns
-
-### Python & DevOps
-- Single = (assign) vs double == (compare)
-- Colon after if/for/while/def
-- Variable name consistency (typos create new variables)
-- Docker, SSH multi-account, Git workflow
+- Dev sees name in top 3 → motivated → tells friends (second viral loop)
+- 5-minute setup test, $60 revenue vs $12 AI cost = 80% margin
+- Data over time is the moat
+- Vision-code drift: #1 cause of lost teams
