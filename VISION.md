@@ -1,31 +1,40 @@
 # CEO Cockpit — Product Vision
 
 > **"Your AI chief-of-staff for engineering execution."**
-> Not another dashboard. An intelligence system that tells you what's happening, how you compare, what nobody else noticed, and what to do about it.
+> Not a dashboard. A prediction engine that tells you what's coming, what's at risk, and what to do about it.
 
 ---
 
-## The Problem Nobody Has Solved
+## The Product Philosophy
 
-Every engineering intelligence platform in 2026 — Jellyfish, LinearB, Swarmia, Allstacks — is built for VPs of Engineering at 200-person companies. They show real-time dashboards full of DORA metrics. They take weeks to set up. They require Jira. They only show YOUR numbers in isolation.
+### Apple Rule: Fewer features, each perfect.
 
-**Nobody is building for the founder. Nobody is giving small teams world context. And nobody's AI is discovering patterns that no human programmed.**
+Every feature earns its place by passing one test: **"Would removing this make a founder notice something is missing?"** If the answer is no, it doesn't ship.
 
-CEO Cockpit does all three.
+We don't build 30 metrics. We build 4 that matter, done insanely well. We don't show raw numbers — every number has a "so what" attached. We don't report the past — we predict the future and give options.
+
+### Future-focused, not past-focused.
+
+Competitors build reporting tools: "You had 47 commits this week."
+
+We build a prediction engine: "Velocity is trending down 15% over 3 weeks. At this pace, next week drops to ~6 PRs. Review pickup time (4.2h avg) is the bottleneck. Option A: split large PRs. Option B: assign second reviewer."
+
+The dashboard is about what's COMING and what to DO, not what already happened. Present data exists only to support future predictions.
+
+### The brief IS the product.
+
+The AI brief isn't a card on the dashboard. It IS the dashboard. It occupies the top 50% of the screen. Everything below it — tiles, chart, repo cards — is supporting evidence for the brief's claims. If you only read the brief and nothing else, you have complete understanding of your engineering team.
 
 ---
 
-## DORA 2025 Key Insight (shapes everything we build)
-
-The 2025 DORA "State of AI-assisted Software Development" report (5,000 professionals surveyed) found:
+## DORA 2025 Key Insight
 
 - **AI is an amplifier, not a fixer.** Strong teams get better. Struggling teams get worse faster.
-- **90% of developers use AI daily.** AI adoption is near-universal.
+- **90% of developers use AI daily.** Near-universal adoption.
 - **AI increases throughput BUT increases instability.** Speed without stability = accelerated chaos.
-- **7 team archetypes** identified: from "Harmonious high-achievers" to "Legacy bottleneck."
-- **AI doesn't replace code review — it makes code review MORE critical.**
+- **7 team archetypes:** from "Harmonious high-achievers" to "Legacy bottleneck."
 
-**What this means for our product:** We don't just track AI adoption percentage. We track whether that adoption is HELPING or HURTING. If ai_assisted_pct is going up but intelligence_score is going down, the brief says: "AI may be amplifying existing code quality issues."
+We don't just track AI adoption. We track whether it's HELPING or HURTING.
 
 ---
 
@@ -33,86 +42,42 @@ The 2025 DORA "State of AI-assisted Software Development" report (5,000 professi
 
 ### The Golden Rule
 
-**Layers 1, 2, and 4 are DETERMINISTIC — no LLM, same input always produces same output.**
+**Layers 1, 2, and 4 are DETERMINISTIC.** Same input = same output. This is what the founder trusts.
 
-**Layer 3 is where AI lives.** It INTERPRETS the deterministic data but never REPLACES it.
-
-Thermometer (Layer 1) reads 38.5°C every time. Doctor (Layer 3) interprets what that means.
+**Layer 3 is where AI lives.** It interprets, predicts, and recommends — but never replaces the deterministic foundation. Layer 3 is the star of the product, but it stands on Layer 1's truth.
 
 ### Layer 1: Truth (deterministic, NO LLM)
-
-Raw metrics from GitHub/Linear APIs. Scoring formulas are fixed and transparent.
-
-- `snapshot_collect` — fetches GitHub data, counts metrics, detects AI tool trailers
-- `org_dashboard` — aggregates, computes velocity scores (fixed formula), generates rule-based alerts
+- `snapshot_collect` — GitHub data + AI tool detection → snapshots table
+- `org_dashboard` — aggregates, scores, rule-based alerts → JSON
 - Velocity score: `10 × merged_prs_7d + commits_24h + 0.2 × commits_7d`
-- Team health score: `100 - (high_alerts × 25) - (warn_alerts × 10)`
-- AI-assisted commit detection: Copilot, Claude Code, Cursor patterns
+- Team health: `100 - (high_alerts × 25) - (warn_alerts × 10)`
 
-### Layer 2: Context (deterministic at runtime, NO LLM at runtime)
+### Layer 2: Context (deterministic at runtime)
+- `benchmarks.py` — industry percentile data, updated quarterly (LLM reads latest research)
+- `org_dashboard` adds `context` — "your 8 PRs/dev puts you at top 25%"
+- Benchmark lines on velocity chart
 
-Your metrics compared against published industry benchmarks. LLM used ONLY to periodically UPDATE benchmark data (quarterly, reading latest research). At runtime: pure math.
+### Layer 3: Meaning (LLM-powered — THE PRODUCT)
+- `ceo_brief` — prediction + narrative + risks + options + pattern discovery
+- `quality_analyze` — code diffs → intelligence score + per-developer assessment + top 3
+- Chat — founder asks follow-up questions about the brief
 
-- `benchmarks.py` — industry data, percentile functions
-- `org_dashboard` adds `context` object — percentile rankings
-- Benchmark lines on velocity chart — industry median as dashed line
-
-Benchmark lifecycle: hardcoded (V1) → LLM-updated from research (V2) → customer-aggregate (V3).
-
-### Layer 3: Meaning (LLM-powered, always attributed)
-
-Two types of AI output, labeled differently on dashboard:
-
+Two types of output, labeled differently:
 ```
-🔴 ALERT: auth-service — no commits in 14 days        [RULE — Layer 1, always reliable]
-🟡 ALERT: low engagement — 1 dev, 2 commits           [RULE — Layer 1, always reliable]
-🔵 AI INSIGHT: PR sizes growing 20% week-over-week    [AI — Layer 3, discovered pattern]
-🔵 AI INSIGHT: Thursday velocity dip detected          [AI — Layer 3, discovered pattern]
+🔴 RULE: auth-service stale 14 days             [deterministic, always reliable]
+🔵 AI: Review bottleneck will worsen by Friday   [predicted, LLM-generated]
 ```
 
-What lives here:
-- `ceo_brief` — narrative + pattern discovery + investor update + dynamic benchmark selection
-- `quality_analyze` — reads code diffs, evaluates architecture/design/tools, produces intelligence score, identifies top contributor work
-- Chat about the brief — founder asks follow-up questions
-
-### Layer 4: Fun (deterministic scores, LLM-assessed recognition)
-
-**Repo-level (deterministic):** Velocity scores, streaks, team leaderboard.
-
-**Developer recognition (LLM-assessed, weekly):** Top 3 contributors highlighted based on the weekly `quality_analyze` deep dive. The LLM reads actual code diffs and identifies WHO made the most impactful engineering contributions — not who typed the most keystrokes.
-
-This is NOT a leaderboard of commit counts (which is gameable and encourages busywork). It's recognition of genuine engineering excellence: "Alice introduced a clean observer pattern that decoupled the auth module. Bob refactored 3 legacy endpoints, reducing complexity by 40%."
-
-**Why LLM-assessed, not formula-based:** Any quantitative ranking (commits, PRs, lines of code) gets gamed. This is Goodhart's Law: "When a measure becomes a target, it ceases to be a good measure." The LLM sees through gaming because it reads the ACTUAL CODE, not just counts.
+### Layer 4: Fun (mixed)
+- Repo velocity scores (deterministic formula)
+- Top 3 developers (LLM-assessed weekly from quality_analyze — not gameable commit counts)
 
 ---
 
-## How It's Different
+## Two Scores
 
-| | Competitors | CEO Cockpit |
-|---|---|---|
-| Primary product | Dashboard with charts | AI brief with narrative |
-| Intelligence | Hardcoded rules | AI discovers emergent patterns |
-| Context | Your numbers in isolation | Your numbers vs the world |
-| Benchmarks | Static DORA tiers | LLM picks what's relevant this week |
-| AI detection | Basic or none | Copilot/Cursor/Claude detection + trend |
-| Developer recognition | Commit count leaderboards (gameable) | LLM-assessed quality contributions (weekly top 3) |
-| Setup | Days to weeks | 5 minutes |
-| Pricing | $59/dev/mo+ | Free → $12/dev/mo |
-
----
-
-## Two Scores (Velocity + Intelligence)
-
-### Velocity Score (Layer 1, deterministic, updated daily)
-How MUCH is shipping. `10 × merged_prs_7d + commits_24h + 0.2 × commits_7d`
-
-### Intelligence Score (Layer 3, AI-assessed, updated weekly)
-How GOOD is the work. LLM reads code diffs and evaluates:
-- Architecture decisions, design quality, tool choices
-- Engineering depth vs boilerplate
-- Per-developer contribution quality (feeds top 3 recognition)
-- Flags: deprecated libraries, no tests, misuse of tools
+**Velocity** (Layer 1, daily, deterministic): How MUCH is shipping.
+**Intelligence** (Layer 3, weekly, AI-assessed): How GOOD is the work.
 
 These can DISAGREE — that's the point:
 - Velocity 128 + Intelligence 45 = "Shipping fast but building fragile"
@@ -120,82 +85,123 @@ These can DISAGREE — that's the point:
 
 ---
 
-## Scheduling Philosophy: Newspaper, Not Live Ticker
+## What We Can and Can't Predict (Honesty)
 
-| Job | Frequency | Cost | LLM? | What |
-|-----|-----------|------|------|------|
-| Light collection | 1-2x daily | ~$0 | No | snapshot_collect: counts + AI detection |
-| Brief generation | 1-2x daily | ~$0.10 | Yes | ceo_brief: narrative + patterns. Stored in `briefs` table. |
-| Deep analysis | Weekly | ~$1-2 | Yes | quality_analyze: diffs → intelligence score + top contributors. Stored in `quality_assessments` table. |
+### V1 (GitHub only) — Engineering health trajectory
+
+| Can predict | How |
+|---|---|
+| Velocity trajectory | 12-week trend → projected next-week pace |
+| Staleness risk | Days since commit + trajectory → "stale by Friday" |
+| Review bottleneck forecast | Open PRs ÷ review speed → "8 days to clear queue" |
+| AI adoption trajectory | ai_assisted_pct trend → "50% AI-assisted in 6 weeks" |
+| Quality trend | Intelligence score over time → "declining 3 weeks = risk" |
+| Developer load imbalance | Commit distribution → "80% from 1 person = bus factor" |
+| Pattern-based risk | LLM finds: "auth goes quiet → next PR is always 900+ lines" |
+
+### V2 (with Linear) — Project delivery prediction
+
+| Will predict | How |
+|---|---|
+| Feature completion dates | Issues + velocity = Monte Carlo simulation |
+| Sprint delivery probability | Planned vs actual completion rates |
+| Milestone slip risk | Scope changes + throughput trends |
+| Scope creep detection | Planned vs unplanned work ratio |
+
+V1 predictions are about PACE and RISK. V2 predictions are about DELIVERY DATES. Both are valuable. We ship V1 predictions so well that founders don't notice what's missing until V2 arrives.
 
 ---
 
-## Dashboard Design
+## Scheduling: Newspaper, Not Live Ticker
 
-### Design philosophy: Apple-level useful beauty
+| Job | Frequency | Cost | LLM? |
+|-----|-----------|------|------|
+| Collection | 1-2x daily | ~$0 | No |
+| Brief + predictions | 1-2x daily | ~$0.10 | Yes, pre-stored in `briefs` table |
+| Deep analysis + top 3 | Weekly | ~$1-2 | Yes, stored in `quality_assessments` table |
 
-Remove everything unnecessary. Make what remains feel alive. Smooth line charts. Generous whitespace. Dark mode default. Brief is the product, dashboard is the drill-down.
+Everything pre-generated. Dashboard loads instantly. Founder never waits for LLM.
 
-### Visual hierarchy (top to bottom)
+---
 
-**1. AI brief card (hero — pre-generated, loads instantly)**
+## Dashboard Design (5 sections, Apple-level)
 
-Tags: `RULE ALERT` / `AI DISCOVERED` / `WORLD`
-Buttons: "Copy as investor update" / "Regenerate" / "Full brief"
+### Design principles
 
-**2. Status tiles (4-6 cards with benchmark context)**
+- Brief IS the dashboard (top 50% of screen)
+- No separate alerts section (woven into brief)
+- No separate patterns card (woven into brief)
+- No leaderboard sidebar (folded into repo cards)
+- Every number has a "so what" — never raw numbers alone
+- Velocity chart projects INTO THE FUTURE (dotted line)
+- Dark mode default, generous whitespace, smooth curves
+- Beautiful enough to screenshot for investors
 
-| Tile | Layer | Benchmark |
-|------|-------|-----------|
-| Commits (7d) | L1 | "Top 25% for 6-person teams" (L2) |
-| PRs merged (7d) | L1 | "Median: 5 for your size" (L2) |
-| AI-assisted code | L1 | "Industry avg: 30%" (L2) |
-| Team health | L1 | "2 rule alerts active" |
-| Intelligence score | L3 | "Last analyzed: Sunday" (when available) |
+### Section 1: AI Brief (hero — 50% of screen)
 
-**3. Velocity chart (smooth line, 12 weeks)**
+Pre-generated, loads instantly. Contains:
+- What shipped this week (with quality assessment)
+- PREDICTIONS: velocity trajectory, risk forecasts, bottleneck warnings
+- OPTIONS: concrete actions the founder can take (A/B/C choices)
+- Top 3 contributors with plain-English description of their best work
+- World context: benchmark comparisons, industry trends
+- Rule-based alerts (woven in, not a separate section)
+- AI-discovered patterns (woven in, not a separate section)
 
-Gradient fill, switchable metrics, industry median dashed line. The chart founders screenshot for investors.
+Buttons: `Copy as investor update` / `Regenerate` / `Chat`
 
-**4. Top contributors (Layer 3, weekly, from quality_analyze)**
+### Section 2: Three Health Indicators (compact row)
 
-Top 3 developers who made the most impactful engineering contributions this week. NOT based on commit counts — based on the LLM's assessment of actual code quality, architecture decisions, and problem difficulty.
+| Indicator | What | Shows |
+|---|---|---|
+| Velocity | How much is shipping | Score + ↑↓ arrow + "top X%" |
+| Team Health | Rule-based health | Score + alert count |
+| AI Adoption | AI tool usage | Percentage + ↑↓ + "avg 30%" |
 
-Example card:
+Plus Intelligence Score badge when available (from weekly analysis).
+
+3-4 compact cards. NOT 10 tiles with raw numbers.
+
+### Section 3: Velocity Trajectory Chart
+
+Smooth line chart (12 weeks) with:
+- Gradient fill, health-colored curve
+- **PROJECTED trajectory** extending forward as a dotted line
+- Industry median as horizontal dashed benchmark line
+- Switchable: velocity score / commits / PRs
+
+The chart SHOWS THE FUTURE. If the trend is declining, the founder sees the dotted line going down before it happens.
+
+### Section 4: Top Contributors (weekly)
+
 ```
-🥇 Alice — Introduced observer pattern for state management (high architectural impact)
-🥈 Bob — Refactored auth module, reduced coupling by 40% (quality improvement)
-🥉 Charlie — Solved complex caching race condition (hard problem)
+🥇 Alice — Observer pattern for state management (high architectural impact)
+🥈 Bob — Auth refactor, reduced coupling by 40% (quality improvement)
+🥉 Charlie — Solved caching race condition (hard problem)
+
+Last analyzed: Sunday  •  Intelligence: 72/100
 ```
 
-Shows only top 3, never bottom performers. Celebrates excellence without shaming anyone. Updated weekly with the deep analysis. Shows "Top contributors last updated: Sunday" between analyses.
+LLM-assessed from code diffs. Not gameable commit counts (Goodhart's Law).
 
-**5. AI-discovered patterns card (Layer 3, from ceo_brief)**
+### Section 5: Repo Cards
 
-Emergent insights. 🟢 Pattern / 🟡 Risk / 🔵 Trend. NOT hardcoded.
+Each card shows:
+- Name + velocity pill (green/amber/red)
+- Intelligence badge when available
+- Smooth mini line chart (12 data points)
+- **One-line AI verdict** (from the brief): "Healthy. 3-week streak." or "Quiet 11 days. Stale Friday."
 
-**6. Rule-based alerts (Layer 1, conditional)**
+No separate leaderboard. The cards ARE the leaderboard, ordered by velocity.
 
-🔴 High / 🟡 Warn. With benchmark context from Layer 2.
-
-**7. Repo cards (left ~70%) + Leaderboard (right ~30%)**
-
-Mini line charts, velocity pill, intelligence badge when available.
-
-### Data flow
+### Data flow (simplified)
 
 ```
-Dashboard element         → Source tool           → Layer → Storage
-──────────────────────────────────────────────────────────────────────
-AI brief (pre-generated)  → ceo_brief()           → L3   → briefs table
-AI patterns card          → ceo_brief()           → L3   → briefs table
-Intelligence score        → quality_analyze()     → L3   → quality_assessments table
-Top 3 contributors       → quality_analyze()     → L3   → quality_assessments table
-Status tiles              → org_dashboard()       → L1+2 → snapshots + benchmarks.py
-Velocity chart            → org_dashboard()       → L1+2 → snapshots (sparklines)
-Rule-based alerts         → org_dashboard()       → L1   → snapshots (computed)
-Repo cards + mini charts  → org_dashboard()       → L1   → snapshots
-Repo leaderboard          → org_dashboard()       → L1   → snapshots
+Brief card           → ceo_brief()        → briefs table (pre-generated)
+Health indicators    → org_dashboard()     → snapshots + benchmarks.py
+Velocity chart       → org_dashboard()     → snapshots (sparklines) + projected trend
+Top 3 contributors  → quality_analyze()   → quality_assessments table
+Repo cards + verdict → org_dashboard()     → snapshots + latest brief (for verdict text)
 ```
 
 ---
@@ -206,8 +212,8 @@ Repo leaderboard          → org_dashboard()       → L1   → snapshots
 
 | Table | Purpose | Layer |
 |-------|---------|-------|
-| `tracked_repos` | Which repos an org monitors | Setup |
-| `snapshots` | Time-series activity metrics per repo | L1 |
+| `tracked_repos` | Which repos to monitor | Setup |
+| `snapshots` | Time-series metrics per repo | L1 |
 | `ledger_state` | Execution summary per repo | L1 |
 | `ledger_events` | Conversation history | L1 |
 
@@ -215,208 +221,209 @@ Repo leaderboard          → org_dashboard()       → L1   → snapshots
 
 | Table | Purpose | Layer | Step |
 |-------|---------|-------|------|
-| `briefs` | Pre-generated AI briefs per org | L3 | Step 4 |
-| `quality_assessments` | Weekly code quality per repo + top contributors | L3 | Step 5 |
+| `briefs` | Pre-generated AI briefs + predictions | L3 | Step 4 |
+| `quality_assessments` | Weekly code quality + top 3 devs | L3 | Step 5 |
 
-**`quality_assessments` table schema:**
-- `id` — unique row identifier
-- `org_id` — which organization
-- `repo` — which repo (one row per repo per week)
-- `week_start` — which week this covers
-- `intelligence_score` — AI quality score (0-100)
-- `analysis_json` — full LLM output: architecture decisions, tool choices, flags, recommendations, per-developer contribution assessments
-- `created_at` — when generated
+### org_dashboard output
 
-The `analysis_json` includes per-developer contribution assessments. `org_dashboard` (or a new endpoint) aggregates across repos to produce the org-wide "top 3 contributors" list.
-
-### org_dashboard output — current vs target
-
-| Field | Status | Layer | Step |
-|-------|--------|-------|------|
-| repos_tracked | ✅ | L1 | — |
-| commits_24h_total | ✅ | L1 | — |
-| commits_7d_total | ✅ | L1 | Step 1 ✅ |
-| merged_prs_7d_total | ✅ | L1 | — |
-| active_devs_total | ✅ | L1 | Step 1 ✅ |
-| activity_score_total | ✅ | L1 | — |
-| team_health_score | ✅ | L1 | Step 1 ✅ |
-| ai_assisted_total | ✅ | L1 | Step 2 ✅ |
-| ai_assisted_pct | ✅ | L1 | Step 2 ✅ |
-| last_collection_ts | ✅ | L1 | — |
-| trends | 🔲 | L2 | Step 3 |
-| context object | 🔲 | L2 | Step 3 |
+| Field | Status | Layer |
+|-------|--------|-------|
+| repos_tracked | ✅ | L1 |
+| commits_24h_total | ✅ | L1 |
+| commits_7d_total | ✅ | L1 |
+| merged_prs_7d_total | ✅ | L1 |
+| active_devs_total | ✅ | L1 |
+| activity_score_total | ✅ | L1 |
+| team_health_score | ✅ | L1 |
+| ai_assisted_total | ✅ | L1 |
+| ai_assisted_pct | ✅ | L1 |
+| last_collection_ts | ✅ | L1 |
+| trends (with trajectory) | 🔲 Step 3 | L2 |
+| context object | 🔲 Step 3 | L2 |
 
 ---
 
-## Context Layer (Layer 2): Implementation
+## ceo_brief — The Heart of the Product
 
-### Source 1: AI tool detection — ✅ Step 2 Done
-Detects: Copilot, Claude Code, Cursor, CodeWhisperer, Aider, generic markers.
+This tool is where 80% of the product's value lives. The LLM prompt must be designed with extreme care.
 
-### Source 2: Industry benchmarks (`benchmarks.py`) — Step 3
-DORA + CodePulse (803K+ PRs). Team-size-adjusted percentiles.
+### What ceo_brief reads:
+- `org_dashboard()` — current metrics + alerts + benchmarks
+- `metrics_series()` — 12+ weeks of historical data for trajectory analysis
+- Latest `quality_assessment` — intelligence score + per-dev analysis
+- Optional web search — framework releases, industry trends
 
-### Source 3: Benchmark lines on charts — Step 7
+### What ceo_brief produces:
+
+```json
+{
+  "summary": "One paragraph: the state of your engineering team.",
+  "predictions": [
+    {
+      "type": "trajectory",
+      "message": "Velocity trending down 15% over 3 weeks. Next week: ~6 PRs.",
+      "confidence": "high",
+      "basis": "12-week linear regression on merged_prs_7d"
+    },
+    {
+      "type": "risk",
+      "message": "auth-service hits stale threshold Friday at current pace.",
+      "confidence": "high",
+      "basis": "11 days inactive, 14-day threshold in 3 days"
+    }
+  ],
+  "options": [
+    {
+      "label": "Split large PRs",
+      "impact": "Fastest review turnaround improvement",
+      "effort": "low"
+    },
+    {
+      "label": "Assign second reviewer for auth-service",
+      "impact": "Reduces review bottleneck by ~50%",
+      "effort": "medium"
+    }
+  ],
+  "top_contributors": [...],
+  "world_context": "Industry AI adoption hit 38%. Your team at 22%, up 3 pts.",
+  "discovered_patterns": [...],
+  "repo_verdicts": {
+    "frontend": "Healthy. 3-week shipping streak.",
+    "auth-service": "Quiet 11 days. Stale Friday."
+  },
+  "investor_version": "..."
+}
+```
+
+### Four modes:
+- `facts` — just data, no speculation
+- `balanced` — data + predictions + options (default)
+- `speculative` — deeper pattern analysis, longer horizon
+- `investor` — professional tone, forward-ready, highlights growth
 
 ---
 
-## Meaning Layer (Layer 3): Implementation
+## quality_analyze — Deep Code Intelligence
 
-### ceo_brief — narrative intelligence (1-2x daily, pre-stored)
+### What it reads:
+Week's merged PRs via GitHub API → code diffs via `compare` tool.
 
-Reads: org_dashboard + metrics_series + latest quality_assessment + optional web search.
-Generates: narrative + emergent patterns + dynamic benchmark picks + external intelligence.
-Key behavior: If ai_assisted_pct rising but intelligence_score declining, warns about AI amplifying problems.
-Modes: facts / balanced / speculative / investor.
+### What it evaluates per repo:
+- Architecture decisions: clean patterns or spaghetti?
+- Design quality: separation of concerns? proper abstractions?
+- Tool choices: right tools? latest versions?
+- Engineering depth: hard problems or boilerplate?
+- Flags: deprecated libraries, no tests on critical path
 
-### quality_analyze — deep code intelligence (weekly, pre-stored)
-
-Reads: week's merged PRs via GitHub API → code diffs via `compare` tool.
-
-Evaluates per repo:
-- Architecture decisions, design quality, tool choices, engineering depth, flags
-
-Evaluates per developer (within each repo):
-- What did each contributor actually build this week?
+### What it evaluates per developer:
+- What did each contributor actually build?
 - Quality and impact of their specific commits/PRs
 - Who made the most impactful engineering contributions?
 
-Produces:
+### What it produces:
 - Intelligence score (0-100) per repo
-- Top 3 contributors across org (with plain-English description of their best work)
-- Detailed analysis stored in `quality_assessments`
+- Top 3 contributors across org with plain-English descriptions
+- Specific, actionable recommendations (not generic advice)
+- Stored in `quality_assessments` table
 
 ---
 
-## Customer Journey
-
-1. Marketing page → "Start free"
-2. GitHub OAuth → read-only access
-3. Pick 3-5 repos
-4. "Collecting first snapshot..." (30-60 seconds)
-5. Dashboard with brief + velocity + benchmarks
-6. One week later: intelligence score + AI patterns + top contributors
-7. Developer sees their name in top 3 → motivated → tells friends
-8. "Copy as investor update" → forward
-9. Investor: "What tool is this?" → organic referral
-
----
-
-## Build Plan (Micro-Steps)
+## Build Plan (Apple-pruned)
 
 ### ✅ Completed
 
 | Step | What | Date |
 |------|------|------|
-| Task 12 | Leaderboard + alerts | Done |
 | Step A | PostgreSQL migration — all 14 tools, SQLite removed | 2026-03-31 |
 | Step 1 | org_dashboard tiles: commits_7d, active_devs, team_health | 2026-04-05 |
 | Step 2 | AI commit detection (Copilot/Claude/Cursor) in snapshots | 2026-04-05 |
 
-### Step 3: benchmarks.py + context enrichment ← CURRENT
+### Step 3: benchmarks.py + context ← CURRENT
 
 | Sub | What |
 |-----|------|
-| 3a | Create benchmarks.py with DORA + research data |
-| 3b | Percentile computation functions (team-size-adjusted) |
-| 3c | Add `context` object to org_dashboard output |
-| 3d | Add `trends` to tiles (week-over-week deltas from snapshots) |
+| 3a | Create benchmarks.py with DORA + research percentile data |
+| 3b | Percentile computation functions (benchmarks.py does the per-dev division) |
+| 3c | Add `context` object to org_dashboard (inline benchmark comparisons) |
+| 3d | Add trajectory arrows to tiles (current value vs previous snapshot) |
 | 3e | Test + commit |
 
-### Step 4: ceo_brief tool + briefs table
+### Step 4: ceo_brief (THE PRODUCT — deep investment)
 
 | Sub | What |
 |-----|------|
 | 4a | Add `briefs` table to models.py |
-| 4b | Design LLM prompt |
-| 4c | Build ceo_brief tool |
-| 4d | facts / balanced / speculative modes |
-| 4e | Emergent pattern discovery |
-| 4f | Investor update mode |
-| 4g | Dynamic benchmark selection |
-| 4h | External intelligence (web search) |
-| 4i | Store in briefs table |
-| 4j | Test + commit |
+| 4b | Design LLM prompt — predictions, risks, options, verdicts (not just summary) |
+| 4c | Build trajectory analysis (12-week trend → projected next week) |
+| 4d | Build risk forecasting (staleness countdown, bottleneck projection) |
+| 4e | Build options engine (concrete A/B/C recommendations) |
+| 4f | Build repo verdicts (one-line AI assessment per repo) |
+| 4g | Four modes: facts / balanced / speculative / investor |
+| 4h | Pattern discovery (LLM analyzes time-series for non-obvious patterns) |
+| 4i | World context (benchmark highlights + optional web search) |
+| 4j | Store in briefs table (pre-generated, loaded instantly) |
+| 4k | Test all modes + commit |
 
-### Step 5: quality_analyze + quality_assessments table
+### Step 5: quality_analyze + top contributors
 
 | Sub | What |
 |-----|------|
 | 5a | Add `quality_assessments` table to models.py |
-| 5b | Design quality analysis LLM prompt (include per-developer assessment) |
+| 5b | Design quality prompt (deep, specific, educational — not generic) |
 | 5c | Build quality_analyze (reads week's PRs + diffs) |
-| 5d | LLM evaluates: architecture, design, tools, depth, flags |
-| 5e | LLM evaluates: per-developer contribution quality |
+| 5d | Per-repo: architecture, design, tools, depth, flags |
+| 5e | Per-developer: contribution quality assessment |
 | 5f | Intelligence score (0-100) per repo |
 | 5g | Top 3 contributors across org |
 | 5h | Store in quality_assessments |
-| 5i | Wire into org_dashboard / API output |
-| 5j | Update ceo_brief to reference quality + contributors |
-| 5k | Test + commit |
+| 5i | Wire latest intelligence score + top 3 into brief |
+| 5j | Test + commit |
 
-### Step 6: FastAPI HTTP layer
-
-| Sub | What |
-|-----|------|
-| 6a | FastAPI alongside MCP |
-| 6b | GET /api/dashboard |
-| 6c | GET /api/brief |
-| 6d | POST /api/brief/regenerate |
-| 6e | CORS + test + commit |
-
-### Step 7: React Dashboard (Apple-level UX)
+### Step 6: React Dashboard (Apple-level UX — includes FastAPI)
 
 | Sub | What |
 |-----|------|
-| 7a | Vite + React + Tailwind |
-| 7b | Brief card (hero, pre-loaded) |
-| 7c | Tiles with benchmark lines |
-| 7d | Velocity line chart (smooth curves, gradient fill, benchmark dashed line) |
-| 7e | Intelligence score badge |
-| 7f | Top 3 contributors card (from quality_assessments) |
-| 7g | AI patterns card |
-| 7h | Rule alerts bar |
-| 7i | Repo cards with mini line charts + IQ badge |
-| 7j | Leaderboard sidebar |
-| 7k | Dark mode + responsive |
-| 7l | "Copy as investor update" |
-| 7m | Polish + commit |
+| 6a | FastAPI HTTP endpoints: /api/dashboard, /api/brief, /api/brief/regenerate |
+| 6b | Vite + React + Tailwind setup |
+| 6c | Brief card (hero, 50% of screen, pre-loaded from briefs table) |
+| 6d | Three health indicator tiles (velocity ↑↓, health, AI adoption ↑↓) |
+| 6e | Velocity trajectory chart (smooth line + projected future + benchmark line) |
+| 6f | Top 3 contributors card |
+| 6g | Repo cards with mini charts + one-line AI verdict |
+| 6h | Chat interface for brief follow-up questions |
+| 6i | Dark mode, responsive, generous whitespace |
+| 6j | "Copy as investor update" button |
+| 6k | Polish until it's beautiful enough to screenshot |
 
-### Step 8: V1.1 Metrics
-
-Lead time breakdown: coding → pickup (92% of wait!) → review → deploy.
-DORA 5th metric: rework rate. AI instability correlation.
+### Step 7: V1.1 Metrics (focused — only what drives predictions)
 
 | Sub | What |
 |-----|------|
-| 8a | PR cycle time (4 stages) |
-| 8b | Time to first review (biggest bottleneck) |
-| 8c | Deploy frequency proxy |
-| 8d | Rework rate (DORA 5th metric) |
-| 8e | AI instability correlation |
-| 8f | New rule alerts: review bottleneck, large PR, rework spike |
-| 8g | Add to benchmarks.py |
-| 8h | Test + commit |
+| 7a | PR cycle time (4 stages: coding → pickup → review → deploy) |
+| 7b | Time to first review (the biggest bottleneck — feeds predictions) |
+| 7c | Add to benchmarks.py + ceo_brief predictions |
+| 7d | Test + commit |
 
-### Future
+### Future (V2+)
 
-- **Step 9:** Linear integration (V1b)
-- **Step 10:** Slack + CI/CD (V2)
-- **Step 11:** DORA team archetype classification (V2)
-- **Step 12:** Autonomous execution (V3)
+- **Step 8:** Linear integration → project delivery predictions (Monte Carlo)
+- **Step 9:** Slack + CI/CD → deploy frequency, notification workflows
+- **Step 10:** DORA team archetype classification
+- **Step 11:** Autonomous execution — bounded autonomy, slip simulation
 
 ---
 
 ## Competitive Landscape (April 2026)
 
-| Tool | Pricing | Our edge |
-|------|---------|----------|
-| Jellyfish | $59/dev/mo | 5x cheaper, AI discovery, world context, intelligence score |
-| LinearB | Enterprise | Brief-first, emergent patterns, quality-based dev recognition |
-| Swarmia | Free → paid | Two-score system, deep code analysis, AI instability tracking |
-| Allstacks | $400/dev/yr | 5 min setup, AI commit detection, pre-generated briefs |
-| Faros AI | Enterprise | We're for startups; they need 1000+ engineers |
-| **CEO Cockpit** | **Free → $12** | **Truth + intelligence + world context + quality recognition** |
+| Tool | What they do | What we do differently |
+|------|-------------|----------------------|
+| Jellyfish ($59/dev) | Dashboards + capacity planning | Brief-first predictions + options |
+| LinearB (Enterprise) | DORA + workflow automation + Monte Carlo | AI reads actual code, not just counts |
+| Allstacks ($400/dev/yr) | ML delivery forecasting | 5 min setup, AI-assessed dev recognition |
+| Swarmia (Free→paid) | DORA + developer experience surveys | Deep code intelligence + quality scoring |
+| Faros AI (Enterprise) | Enterprise DORA + AI impact | We're for startups, 5x cheaper |
+| Hivel (India) | Early-stage engineering intelligence | Prediction engine, not reporting tool |
+| **CEO Cockpit** | **Predictions + options + intelligence** | **Only product that reads code, predicts risks, and gives options** |
 
 ---
 
@@ -426,18 +433,20 @@ DORA 5th metric: rework rate. AI instability correlation.
 - **Database:** PostgreSQL 16 (Docker) — 4 current + 2 planned tables
 - **ORM:** SQLAlchemy 2.0
 - **AI:** Model gateway — swappable LLM providers
-- **Frontend:** React (Vite) — planned
+- **Frontend:** React (Vite + Tailwind) — planned
 - **Benchmarks:** benchmarks.py → LLM-updated → customer-aggregate
 
 ---
 
 ## What NOT to Do
 
-- Don't put LLM in Layer 1 — deterministic foundation must stay deterministic
-- Don't make the dashboard real-time — newspaper model, not live ticker
-- Don't rank developers by commit counts or lines of code — gameable metrics create perverse incentives (Goodhart's Law)
-- Don't show bottom performers — celebrate excellence, don't shame underperformance
-- Don't hardcode all insights — let the AI discover patterns
-- Don't ignore AI instability — track if AI adoption correlates with more reverts
-- Don't confuse velocity (how much) with intelligence (how good)
-- Don't let vision-code drift — documents must match reality at all times
+- Don't show raw numbers without "so what" — every number needs context
+- Don't build features that fail the "would they miss it?" test
+- Don't report the past — predict the future, give options
+- Don't put LLM in Layer 1 — deterministic foundation stays
+- Don't rank developers by commit counts (Goodhart's Law)
+- Don't show bottom performers — celebrate top 3, never shame
+- Don't make the dashboard look like 2000s enterprise software
+- Don't add more metrics when existing ones aren't perfect yet
+- Don't promise project delivery dates without Linear data (V2)
+- Don't let vision-code drift — documents must match reality
