@@ -22,6 +22,7 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 # --- Postgres / SQLAlchemy imports ---
 from db import SessionLocal, init_db
+from benchmarks import get_all_benchmarks
 from models import TrackedRepo, Snapshot, LedgerState, LedgerEvent
 
 
@@ -914,6 +915,15 @@ async def org_dashboard(org_id: str, spark_points: int = 20) -> dict:
         warn_count = sum(1 for a in alerts if a.get("level") == "warn")
         team_health_score = max(0, 100 - (high_count * 25) - (warn_count * 10))
 
+        ai_assisted_pct = round(ai_assisted_total / max(commits_7d_total, 1) * 100, 1)
+
+        context = get_all_benchmarks(
+            commits_7d=commits_7d_total,
+            merged_prs_7d=merged_prs_7d_total,
+            ai_assisted_pct=ai_assisted_pct,
+            num_devs=active_devs_total,
+        )
+
         tiles = {
             "repos_tracked": len(tracked),
             "last_collection_ts": last_collection_ts,
@@ -924,13 +934,14 @@ async def org_dashboard(org_id: str, spark_points: int = 20) -> dict:
             "activity_score_total": activity_score_total,
             "team_health_score": team_health_score,
             "ai_assisted_total": ai_assisted_total,
-            "ai_assisted_pct": round(ai_assisted_total / max(commits_7d_total, 1) * 100, 1),
+            "ai_assisted_pct": ai_assisted_pct,
         }
 
         return {
             "ok": True,
             "org_id": org_id,
             "tiles": tiles,
+            "context": context,
             "repos": repos,
             "leaderboard": leaderboard,
             "alerts": alerts,
